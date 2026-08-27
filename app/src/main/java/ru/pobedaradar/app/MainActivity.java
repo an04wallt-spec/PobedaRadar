@@ -29,27 +29,36 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.YearMonth;
+import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 
 public class MainActivity extends Activity {
+
+    private static final String APP_VERSION = "v0.7";
 
     private static final String PREFS = "pobeda_radar";
 
     private static final String TOKEN_KEY = "travelpayouts_token";
     private static final String DATE_FROM_KEY = "date_from";
     private static final String DATE_TO_KEY = "date_to";
+    private static final String DIRECTION_KEY = "direction_outbound";
 
     private static final String LAST_PRICE_PREFIX = "last_price_";
     private static final String MIN_PRICE_PREFIX = "min_price_";
+    private static final String LAST_SEEN_PREFIX = "last_seen_";
+    private static final String LAST_UPDATE_PREFIX = "last_update_";
 
     private static final int RED = Color.rgb(210, 30, 30);
     private static final int GREEN = Color.rgb(35, 135, 70);
@@ -60,15 +69,18 @@ public class MainActivity extends Activity {
     private final DateTimeFormatter uiDate =
             DateTimeFormatter.ofPattern("dd.MM.yyyy", new Locale("ru"));
 
-    private final DateTimeFormatter weekDate =
+    private final DateTimeFormatter shortUiDate =
             DateTimeFormatter.ofPattern("dd.MM", new Locale("ru"));
 
     private final DateTimeFormatter monthParam =
             DateTimeFormatter.ofPattern("yyyy-MM");
 
+    private final DateTimeFormatter timeFormat =
+            DateTimeFormatter.ofPattern("HH:mm", new Locale("ru"));
+
     private SharedPreferences prefs;
 
-    private boolean outbound = true;
+    private boolean outbound;
 
     private LocalDate rangeFrom;
     private LocalDate rangeTo;
@@ -81,6 +93,7 @@ public class MainActivity extends Activity {
     private Button backButton;
     private Button fromButton;
     private Button toButton;
+    private Button refreshButton;
 
     private EditText tokenInput;
 
@@ -89,11 +102,19 @@ public class MainActivity extends Activity {
 
     private ProgressBar progress;
 
+    private boolean requestRunning = false;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
         prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
+
+        outbound =
+                prefs.getBoolean(
+                        DIRECTION_KEY,
+                        true
+                );
 
         restoreDates();
         buildInterface();
@@ -109,24 +130,30 @@ public class MainActivity extends Activity {
         LocalDate today = LocalDate.now();
 
         try {
+
             rangeFrom = LocalDate.parse(
                     prefs.getString(
                             DATE_FROM_KEY,
                             today.toString()
                     )
             );
+
         } catch (Exception e) {
+
             rangeFrom = today;
         }
 
         try {
+
             rangeTo = LocalDate.parse(
                     prefs.getString(
                             DATE_TO_KEY,
                             today.plusDays(30).toString()
                     )
             );
+
         } catch (Exception e) {
+
             rangeTo = today.plusDays(30);
         }
 
@@ -144,8 +171,14 @@ public class MainActivity extends Activity {
     private void saveDates() {
 
         prefs.edit()
-                .putString(DATE_FROM_KEY, rangeFrom.toString())
-                .putString(DATE_TO_KEY, rangeTo.toString())
+                .putString(
+                        DATE_FROM_KEY,
+                        rangeFrom.toString()
+                )
+                .putString(
+                        DATE_TO_KEY,
+                        rangeTo.toString()
+                )
                 .apply();
     }
 
@@ -156,15 +189,24 @@ public class MainActivity extends Activity {
     private void buildInterface() {
 
         root = new LinearLayout(this);
-        root.setOrientation(LinearLayout.VERTICAL);
 
-        // Без ScrollView. Интерфейс рассчитан на один экран.
+        root.setOrientation(
+                LinearLayout.VERTICAL
+        );
+
+        /*
+         * ScrollView намеренно отсутствует.
+         */
         root.setPadding(
                 dp(16),
                 dp(38),
                 dp(16),
-                dp(8)
+                dp(6)
         );
+
+        // --------------------------------------------------------
+        // Заголовок
+        // --------------------------------------------------------
 
         TextView title =
                 makeText(
@@ -185,7 +227,10 @@ public class MainActivity extends Activity {
                 )
         );
 
-        // Направление
+        // --------------------------------------------------------
+        // Направления
+        // --------------------------------------------------------
+
         LinearLayout directionRow =
                 new LinearLayout(this);
 
@@ -214,10 +259,11 @@ public class MainActivity extends Activity {
                 )
         );
 
-        View gap1 = new View(this);
+        View directionGap =
+                new View(this);
 
         directionRow.addView(
-                gap1,
+                directionGap,
                 new LinearLayout.LayoutParams(
                         dp(8),
                         1
@@ -247,16 +293,31 @@ public class MainActivity extends Activity {
         );
 
         outButton.setOnClickListener(v -> {
+
+            if (requestRunning) {
+                return;
+            }
+
             outbound = true;
+            saveDirection();
             refreshInterface();
         });
 
         backButton.setOnClickListener(v -> {
+
+            if (requestRunning) {
+                return;
+            }
+
             outbound = false;
+            saveDirection();
             refreshInterface();
         });
 
+        // --------------------------------------------------------
         // Ближайшие даты
+        // --------------------------------------------------------
+
         TextView weekTitle =
                 makeText(
                         "Ближайшие даты",
@@ -294,7 +355,10 @@ public class MainActivity extends Activity {
                 )
         );
 
-        // Диапазон дат
+        // --------------------------------------------------------
+        // Диапазон
+        // --------------------------------------------------------
+
         TextView datesCaption =
                 makeText(
                         "Диапазон дат",
@@ -337,10 +401,11 @@ public class MainActivity extends Activity {
                 )
         );
 
-        View gap2 = new View(this);
+        View dateGap =
+                new View(this);
 
         datesRow.addView(
-                gap2,
+                dateGap,
                 new LinearLayout.LayoutParams(
                         dp(8),
                         1
@@ -364,15 +429,24 @@ public class MainActivity extends Activity {
                 )
         );
 
-        fromButton.setOnClickListener(
-                v -> pickDate(true)
-        );
+        fromButton.setOnClickListener(v -> {
 
-        toButton.setOnClickListener(
-                v -> pickDate(false)
-        );
+            if (!requestRunning) {
+                pickDate(true);
+            }
+        });
 
+        toButton.setOnClickListener(v -> {
+
+            if (!requestRunning) {
+                pickDate(false);
+            }
+        });
+
+        // --------------------------------------------------------
         // Токен
+        // --------------------------------------------------------
+
         tokenBlock =
                 new LinearLayout(this);
 
@@ -422,11 +496,17 @@ public class MainActivity extends Activity {
         );
 
         if (!savedToken.isEmpty()) {
-            tokenBlock.setVisibility(View.GONE);
+
+            tokenBlock.setVisibility(
+                    View.GONE
+            );
         }
 
+        // --------------------------------------------------------
         // Обновить
-        Button refreshButton =
+        // --------------------------------------------------------
+
+        refreshButton =
                 makeButton(
                         "ОБНОВИТЬ РАДАР",
                         15
@@ -449,7 +529,10 @@ public class MainActivity extends Activity {
                 v -> loadRadar()
         );
 
-        // Результат
+        // --------------------------------------------------------
+        // Минимум
+        // --------------------------------------------------------
+
         resultText =
                 makeText(
                         "",
@@ -457,12 +540,14 @@ public class MainActivity extends Activity {
                         true
                 );
 
-        resultText.setGravity(Gravity.CENTER);
+        resultText.setGravity(
+                Gravity.CENTER
+        );
 
         LinearLayout.LayoutParams resultLp =
                 new LinearLayout.LayoutParams(
                         LinearLayout.LayoutParams.MATCH_PARENT,
-                        dp(23)
+                        dp(24)
                 );
 
         resultLp.topMargin = dp(3);
@@ -472,6 +557,10 @@ public class MainActivity extends Activity {
                 resultLp
         );
 
+        // --------------------------------------------------------
+        // Статус
+        // --------------------------------------------------------
+
         statusText =
                 makeText(
                         "",
@@ -480,27 +569,36 @@ public class MainActivity extends Activity {
                 );
 
         statusText.setTextColor(GREY);
-        statusText.setGravity(Gravity.CENTER);
-        statusText.setMaxLines(2);
+
+        statusText.setGravity(
+                Gravity.CENTER
+        );
+
+        statusText.setSingleLine(true);
 
         root.addView(
                 statusText,
                 new LinearLayout.LayoutParams(
                         LinearLayout.LayoutParams.MATCH_PARENT,
-                        dp(32)
+                        dp(26)
                 )
         );
 
-        // Индикатор
+        // --------------------------------------------------------
+        // Прогресс
+        // --------------------------------------------------------
+
         progress =
                 new ProgressBar(this);
 
-        progress.setVisibility(View.GONE);
+        progress.setVisibility(
+                View.GONE
+        );
 
         LinearLayout.LayoutParams progressLp =
                 new LinearLayout.LayoutParams(
-                        dp(24),
-                        dp(24)
+                        dp(22),
+                        dp(22)
                 );
 
         progressLp.gravity =
@@ -511,24 +609,63 @@ public class MainActivity extends Activity {
                 progressLp
         );
 
-        // Сайт Победы
+        // --------------------------------------------------------
+        // Нижняя строка
+        // --------------------------------------------------------
+
+        LinearLayout bottomRow =
+                new LinearLayout(this);
+
+        bottomRow.setOrientation(
+                LinearLayout.HORIZONTAL
+        );
+
+        bottomRow.setGravity(
+                Gravity.CENTER_VERTICAL
+        );
+
         Button pobedaButton =
                 makeSmallButton(
                         "Проверить на сайте Победы"
                 );
 
-        LinearLayout.LayoutParams pobedaLp =
+        bottomRow.addView(
+                pobedaButton,
                 new LinearLayout.LayoutParams(
-                        LinearLayout.LayoutParams.WRAP_CONTENT,
-                        dp(36)
+                        0,
+                        dp(34),
+                        1
+                )
+        );
+
+        TextView version =
+                makeText(
+                        APP_VERSION,
+                        10,
+                        false
                 );
 
-        pobedaLp.gravity =
-                Gravity.CENTER_HORIZONTAL;
+        version.setTextColor(GREY);
+
+        version.setGravity(
+                Gravity.END
+                        | Gravity.CENTER_VERTICAL
+        );
+
+        bottomRow.addView(
+                version,
+                new LinearLayout.LayoutParams(
+                        dp(48),
+                        dp(34)
+                )
+        );
 
         root.addView(
-                pobedaButton,
-                pobedaLp
+                bottomRow,
+                new LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        dp(34)
+                )
         );
 
         pobedaButton.setOnClickListener(v -> {
@@ -558,6 +695,16 @@ public class MainActivity extends Activity {
         setContentView(root);
     }
 
+    private void saveDirection() {
+
+        prefs.edit()
+                .putBoolean(
+                        DIRECTION_KEY,
+                        outbound
+                )
+                .apply();
+    }
+
     private void refreshInterface() {
 
         styleDirection(
@@ -571,26 +718,49 @@ public class MainActivity extends Activity {
         );
 
         fromButton.setText(
-                "С  " + rangeFrom.format(uiDate)
+                "С  "
+                        + rangeFrom.format(uiDate)
         );
 
         toButton.setText(
-                "ПО  " + rangeTo.format(uiDate)
+                "ПО  "
+                        + rangeTo.format(uiDate)
         );
 
         showStoredWeek();
 
         resultText.setText("");
 
-        statusText.setText(
-                outbound
-                        ? "Москва → Газипаша"
-                        : "Газипаша → Москва"
-        );
+        long lastUpdate =
+                getLastUpdate(
+                        outbound
+                );
+
+        if (lastUpdate > 0) {
+
+            statusText.setText(
+                    routeText()
+                            + " · обновлено "
+                            + formatTime(lastUpdate)
+            );
+
+        } else {
+
+            statusText.setText(
+                    routeText()
+            );
+        }
+    }
+
+    private String routeText() {
+
+        return outbound
+                ? "Москва → Газипаша"
+                : "Газипаша → Москва";
     }
 
     // ============================================================
-    // БЛИЖАЙШИЕ ДАТЫ + ИСТОРИЯ
+    // БЛИЖАЙШИЕ ДАТЫ
     // ============================================================
 
     private void showStoredWeek() {
@@ -607,21 +777,44 @@ public class MainActivity extends Activity {
                 addWeekRow(
                         day,
                         "",
-                        PriceChange.noChange()
+                        "",
+                        GREY
                 );
 
                 continue;
             }
 
             int storedPrice =
-                    getStoredLastPrice(day);
+                    getStoredLastPrice(
+                            day,
+                            outbound
+                    );
+
+            int storedMinimum =
+                    getStoredMinPrice(
+                            day,
+                            outbound
+                    );
 
             if (storedPrice > 0) {
+
+                String info =
+                        "ранее";
+
+                if (storedMinimum > 0) {
+
+                    info +=
+                            " · мин "
+                                    + formatPriceCompact(
+                                    storedMinimum
+                            );
+                }
 
                 addWeekRow(
                         day,
                         formatPrice(storedPrice),
-                        PriceChange.noChange()
+                        info,
+                        GREY
                 );
 
             } else {
@@ -629,7 +822,8 @@ public class MainActivity extends Activity {
                 addWeekRow(
                         day,
                         "—",
-                        PriceChange.noChange()
+                        "",
+                        GREY
                 );
             }
         }
@@ -643,24 +837,9 @@ public class MainActivity extends Activity {
         weekBox.removeAllViews();
 
         Map<LocalDate, Integer> currentPrices =
-                new LinkedHashMap<>();
-
-        for (Offer offer : offers) {
-
-            Integer old =
-                    currentPrices.get(
-                            offer.date
-                    );
-
-            if (old == null
-                    || offer.price < old) {
-
-                currentPrices.put(
-                        offer.date,
-                        offer.price
+                getBestPricesByDate(
+                        offers
                 );
-            }
-        }
 
         for (int i = 0; i < 7; i++) {
 
@@ -672,25 +851,17 @@ public class MainActivity extends Activity {
                 addWeekRow(
                         day,
                         "",
-                        PriceChange.noChange()
+                        "",
+                        GREY
                 );
 
                 continue;
             }
 
             Integer newPrice =
-                    currentPrices.get(day);
-
-            if (newPrice == null) {
-
-                addWeekRow(
-                        day,
-                        "нет данных",
-                        PriceChange.noChange()
-                );
-
-                continue;
-            }
+                    currentPrices.get(
+                            day
+                    );
 
             int oldPrice =
                     getStoredLastPrice(
@@ -698,57 +869,164 @@ public class MainActivity extends Activity {
                             historyOutbound
                     );
 
-            PriceChange change;
+            int oldMinimum =
+                    getStoredMinPrice(
+                            day,
+                            historyOutbound
+                    );
 
-            if (oldPrice <= 0) {
+            /*
+             * API сейчас ничего не вернул.
+             * Старую цену НЕ удаляем.
+             */
+            if (newPrice == null) {
 
-                change =
-                        PriceChange.noChange();
+                if (oldPrice > 0) {
 
-            } else {
+                    String info =
+                            "ранее";
 
-                int difference =
-                        newPrice - oldPrice;
+                    if (oldMinimum > 0) {
 
-                if (difference > 0) {
+                        info +=
+                                " · мин "
+                                        + formatPriceCompact(
+                                        oldMinimum
+                                );
+                    }
 
-                    change =
-                            PriceChange.up(
-                                    difference
-                            );
-
-                } else if (difference < 0) {
-
-                    change =
-                            PriceChange.down(
-                                    Math.abs(difference)
-                            );
+                    addWeekRow(
+                            day,
+                            formatPrice(oldPrice),
+                            info,
+                            GREY
+                    );
 
                 } else {
 
-                    change =
-                            PriceChange.same();
+                    addWeekRow(
+                            day,
+                            "нет данных",
+                            "",
+                            GREY
+                    );
                 }
+
+                continue;
             }
 
-            addWeekRow(
-                    day,
-                    formatPrice(newPrice),
-                    change
-            );
+            int difference =
+                    oldPrice > 0
+                            ? newPrice - oldPrice
+                            : 0;
 
+            /*
+             * Сначала сохраняем.
+             */
             savePriceHistory(
                     day,
                     newPrice,
                     historyOutbound
             );
+
+            int historicalMinimum =
+                    getStoredMinPrice(
+                            day,
+                            historyOutbound
+                    );
+
+            String change;
+
+            int changeColor =
+                    GREY;
+
+            if (oldPrice <= 0) {
+
+                change = "";
+
+            } else if (difference > 0) {
+
+                change =
+                        "↑"
+                                + formatShortNumber(
+                                difference
+                        );
+
+                changeColor =
+                        RED;
+
+            } else if (difference < 0) {
+
+                change =
+                        "↓"
+                                + formatShortNumber(
+                                Math.abs(
+                                        difference
+                                )
+                        );
+
+                changeColor =
+                        GREEN;
+
+            } else {
+
+                change = "=";
+            }
+
+            if (historicalMinimum > 0) {
+
+                if (!change.isEmpty()) {
+                    change += " · ";
+                }
+
+                change +=
+                        "мин "
+                                + formatPriceCompact(
+                                historicalMinimum
+                        );
+            }
+
+            addWeekRow(
+                    day,
+                    formatPrice(newPrice),
+                    change,
+                    changeColor
+            );
         }
+    }
+
+    private Map<LocalDate, Integer> getBestPricesByDate(
+            List<Offer> offers
+    ) {
+
+        Map<LocalDate, Integer> prices =
+                new LinkedHashMap<>();
+
+        for (Offer offer : offers) {
+
+            Integer old =
+                    prices.get(
+                            offer.date
+                    );
+
+            if (old == null
+                    || offer.price < old) {
+
+                prices.put(
+                        offer.date,
+                        offer.price
+                );
+            }
+        }
+
+        return prices;
     }
 
     private void addWeekRow(
             LocalDate date,
             String price,
-            PriceChange change
+            String info,
+            int infoColor
     ) {
 
         LinearLayout row =
@@ -764,19 +1042,23 @@ public class MainActivity extends Activity {
 
         TextView dateText =
                 makeText(
-                        date.format(weekDate),
+                        date.format(
+                                shortUiDate
+                        ),
                         13,
                         false
                 );
 
-        dateText.setTextColor(GREY);
+        dateText.setTextColor(
+                GREY
+        );
 
         row.addView(
                 dateText,
                 new LinearLayout.LayoutParams(
                         0,
                         dp(22),
-                        0.8f
+                        0.65f
                 )
         );
 
@@ -796,11 +1078,15 @@ public class MainActivity extends Activity {
                 || "—".equals(price)
                 || price.isEmpty()) {
 
-            priceText.setTextColor(GREY);
+            priceText.setTextColor(
+                    GREY
+            );
 
         } else {
 
-            priceText.setTextColor(DARK);
+            priceText.setTextColor(
+                    DARK
+            );
         }
 
         row.addView(
@@ -808,98 +1094,43 @@ public class MainActivity extends Activity {
                 new LinearLayout.LayoutParams(
                         0,
                         dp(22),
-                        1.1f
+                        1.0f
                 )
         );
 
-        TextView changeText =
+        TextView infoText =
                 makeText(
-                        formatChange(change),
-                        12,
+                        info,
+                        11,
                         true
                 );
 
-        changeText.setGravity(
+        infoText.setGravity(
                 Gravity.END
                         | Gravity.CENTER_VERTICAL
         );
 
-        if (change.type == PriceChange.TYPE_UP) {
+        infoText.setTextColor(
+                infoColor
+        );
 
-            changeText.setTextColor(RED);
-
-        } else if (
-                change.type
-                        == PriceChange.TYPE_DOWN
-        ) {
-
-            changeText.setTextColor(GREEN);
-
-        } else {
-
-            changeText.setTextColor(GREY);
-        }
+        infoText.setSingleLine(true);
 
         row.addView(
-                changeText,
+                infoText,
                 new LinearLayout.LayoutParams(
                         0,
                         dp(22),
-                        0.9f
+                        1.45f
                 )
         );
 
         weekBox.addView(row);
     }
 
-    private String formatChange(
-            PriceChange change
-    ) {
-
-        if (change == null
-                || change.type
-                == PriceChange.TYPE_NONE) {
-
-            return "";
-        }
-
-        if (change.type
-                == PriceChange.TYPE_UP) {
-
-            return "↑"
-                    + formatShortNumber(
-                    change.amount
-            );
-        }
-
-        if (change.type
-                == PriceChange.TYPE_DOWN) {
-
-            return "↓"
-                    + formatShortNumber(
-                    change.amount
-            );
-        }
-
-        if (change.type
-                == PriceChange.TYPE_SAME) {
-
-            return "=";
-        }
-
-        return "";
-    }
-
     // ============================================================
     // ХРАНЕНИЕ ЦЕН
     // ============================================================
-
-    private String routeHistoryId() {
-
-        return outbound
-                ? "MOW_GZP"
-                : "GZP_MOW";
-    }
 
     private String routeHistoryId(
             boolean isOutbound
@@ -908,16 +1139,6 @@ public class MainActivity extends Activity {
         return isOutbound
                 ? "MOW_GZP"
                 : "GZP_MOW";
-    }
-
-    private String lastPriceKey(
-            LocalDate date
-    ) {
-
-        return LAST_PRICE_PREFIX
-                + routeHistoryId()
-                + "_"
-                + date;
     }
 
     private String lastPriceKey(
@@ -946,13 +1167,26 @@ public class MainActivity extends Activity {
                 + date;
     }
 
-    private int getStoredLastPrice(
-            LocalDate date
+    private String lastSeenKey(
+            LocalDate date,
+            boolean isOutbound
     ) {
 
-        return prefs.getInt(
-                lastPriceKey(date),
-                -1
+        return LAST_SEEN_PREFIX
+                + routeHistoryId(
+                isOutbound
+        )
+                + "_"
+                + date;
+    }
+
+    private String lastUpdateKey(
+            boolean isOutbound
+    ) {
+
+        return LAST_UPDATE_PREFIX
+                + routeHistoryId(
+                isOutbound
         );
     }
 
@@ -984,6 +1218,18 @@ public class MainActivity extends Activity {
         );
     }
 
+    private long getLastUpdate(
+            boolean isOutbound
+    ) {
+
+        return prefs.getLong(
+                lastUpdateKey(
+                        isOutbound
+                ),
+                0L
+        );
+    }
+
     private void savePriceHistory(
             LocalDate date,
             int currentPrice,
@@ -996,21 +1242,16 @@ public class MainActivity extends Activity {
                         isOutbound
                 );
 
-        int newMinimum;
+        int newMinimum =
+                oldMinimum <= 0
+                        ? currentPrice
+                        : Math.min(
+                        oldMinimum,
+                        currentPrice
+                );
 
-        if (oldMinimum <= 0) {
-
-            newMinimum =
-                    currentPrice;
-
-        } else {
-
-            newMinimum =
-                    Math.min(
-                            oldMinimum,
-                            currentPrice
-                    );
-        }
+        long now =
+                System.currentTimeMillis();
 
         prefs.edit()
                 .putInt(
@@ -1027,11 +1268,32 @@ public class MainActivity extends Activity {
                         ),
                         newMinimum
                 )
+                .putLong(
+                        lastSeenKey(
+                                date,
+                                isOutbound
+                        ),
+                        now
+                )
+                .apply();
+    }
+
+    private void saveLastUpdate(
+            boolean isOutbound
+    ) {
+
+        prefs.edit()
+                .putLong(
+                        lastUpdateKey(
+                                isOutbound
+                        ),
+                        System.currentTimeMillis()
+                )
                 .apply();
     }
 
     // ============================================================
-    // ВЫБОР ДАТ
+    // ДАТЫ
     // ============================================================
 
     private void pickDate(
@@ -1106,14 +1368,15 @@ public class MainActivity extends Activity {
 
     private void loadRadar() {
 
-        String savedToken =
+        if (requestRunning) {
+            return;
+        }
+
+        String token =
                 prefs.getString(
                         TOKEN_KEY,
                         ""
                 );
-
-        String token =
-                savedToken;
 
         if (token.isEmpty()) {
 
@@ -1163,18 +1426,16 @@ public class MainActivity extends Activity {
 
         saveDates();
 
-        progress.setVisibility(
-                View.VISIBLE
-        );
+        setLoadingState(true);
 
         resultText.setText(
                 "Ищу цены Победы…"
         );
 
         statusText.setText(
-                requestedFrom.format(uiDate)
-                        + " — "
-                        + requestedTo.format(uiDate)
+                requestedFrom.format(shortUiDate)
+                        + "–"
+                        + requestedTo.format(shortUiDate)
         );
 
         new Thread(() -> {
@@ -1192,9 +1453,7 @@ public class MainActivity extends Activity {
 
                 runOnUiThread(() -> {
 
-                    progress.setVisibility(
-                            View.GONE
-                    );
+                    setLoadingState(false);
 
                     prefs.edit()
                             .putString(
@@ -1207,9 +1466,13 @@ public class MainActivity extends Activity {
                             View.GONE
                     );
 
+                    saveLastUpdate(
+                            requestedOutbound
+                    );
+
                     /*
-                     * Историю сохраняем именно
-                     * для направления запроса.
+                     * Если пользователь не успел изменить
+                     * состояние экрана.
                      */
                     if (outbound
                             == requestedOutbound
@@ -1227,12 +1490,6 @@ public class MainActivity extends Activity {
 
                     } else {
 
-                        /*
-                         * Пользователь успел переключить
-                         * направление или изменить даты.
-                         * Историю всё равно сохраняем,
-                         * но не рисуем её поверх новой вкладки.
-                         */
                         saveHistoryWithoutDrawing(
                                 offers,
                                 requestedOutbound
@@ -1244,35 +1501,25 @@ public class MainActivity extends Activity {
                     if (offers.isEmpty()) {
 
                         resultText.setText(
-                                "Цены Победы не найдены"
+                                "Свежих цен Победы нет"
                         );
 
                         statusText.setText(
-                                "Рейсы могут быть — в API сейчас нет цены DP"
+                                "Обновлено "
+                                        + formatTime(
+                                        getLastUpdate(
+                                                requestedOutbound
+                                        )
+                                )
                         );
 
                     } else {
 
-                        int min =
-                                Integer.MAX_VALUE;
-
-                        for (Offer offer : offers) {
-
-                            min =
-                                    Math.min(
-                                            min,
-                                            offer.price
-                                    );
-                        }
-
-                        resultText.setText(
-                                "Минимум "
-                                        + formatPrice(min)
-                        );
-
-                        statusText.setText(
-                                "Найдено цен DP: "
-                                        + offers.size()
+                        showSummary(
+                                offers,
+                                requestedFrom,
+                                requestedTo,
+                                requestedOutbound
                         );
                     }
                 });
@@ -1281,9 +1528,7 @@ public class MainActivity extends Activity {
 
                 runOnUiThread(() -> {
 
-                    progress.setVisibility(
-                            View.GONE
-                    );
+                    setLoadingState(false);
 
                     resultText.setText(
                             "Ошибка обновления"
@@ -1300,30 +1545,160 @@ public class MainActivity extends Activity {
         }).start();
     }
 
+    private void setLoadingState(
+            boolean loading
+    ) {
+
+        requestRunning =
+                loading;
+
+        progress.setVisibility(
+                loading
+                        ? View.VISIBLE
+                        : View.GONE
+        );
+
+        refreshButton.setEnabled(
+                !loading
+        );
+
+        refreshButton.setText(
+                loading
+                        ? "ОБНОВЛЯЮ…"
+                        : "ОБНОВИТЬ РАДАР"
+        );
+
+        outButton.setEnabled(
+                !loading
+        );
+
+        backButton.setEnabled(
+                !loading
+        );
+
+        fromButton.setEnabled(
+                !loading
+        );
+
+        toButton.setEnabled(
+                !loading
+        );
+    }
+
+    private void showSummary(
+            List<Offer> offers,
+            LocalDate requestedFrom,
+            LocalDate requestedTo,
+            boolean requestedOutbound
+    ) {
+
+        int min =
+                Integer.MAX_VALUE;
+
+        Set<LocalDate> minDates =
+                new LinkedHashSet<>();
+
+        Set<LocalDate> uniqueDates =
+                new LinkedHashSet<>();
+
+        for (Offer offer : offers) {
+
+            uniqueDates.add(
+                    offer.date
+            );
+
+            if (offer.price < min) {
+
+                min =
+                        offer.price;
+
+                minDates.clear();
+
+                minDates.add(
+                        offer.date
+                );
+
+            } else if (
+                    offer.price == min
+            ) {
+
+                minDates.add(
+                        offer.date
+                );
+            }
+        }
+
+        resultText.setText(
+                "Минимум: "
+                        + formatPrice(min)
+                        + " · "
+                        + formatMinDates(
+                        minDates
+                )
+        );
+
+        statusText.setText(
+                "Обновлено "
+                        + formatTime(
+                        getLastUpdate(
+                                requestedOutbound
+                        )
+                )
+                        + " · "
+                        + uniqueDates.size()
+                        + " дат"
+        );
+    }
+
+    private String formatMinDates(
+            Set<LocalDate> dates
+    ) {
+
+        if (dates == null
+                || dates.isEmpty()) {
+
+            return "";
+        }
+
+        StringBuilder builder =
+                new StringBuilder();
+
+        int index = 0;
+
+        for (LocalDate date : dates) {
+
+            if (index > 0) {
+                builder.append(", ");
+            }
+
+            if (dates.size() == 1) {
+
+                builder.append(
+                        date.format(uiDate)
+                );
+
+            } else {
+
+                builder.append(
+                        date.format(shortUiDate)
+                );
+            }
+
+            index++;
+        }
+
+        return builder.toString();
+    }
+
     private void saveHistoryWithoutDrawing(
             List<Offer> offers,
             boolean historyOutbound
     ) {
 
         Map<LocalDate, Integer> currentPrices =
-                new LinkedHashMap<>();
-
-        for (Offer offer : offers) {
-
-            Integer current =
-                    currentPrices.get(
-                            offer.date
-                    );
-
-            if (current == null
-                    || offer.price < current) {
-
-                currentPrices.put(
-                        offer.date,
-                        offer.price
+                getBestPricesByDate(
+                        offers
                 );
-            }
-        }
 
         for (Map.Entry<LocalDate, Integer> entry
                 : currentPrices.entrySet()) {
@@ -1335,6 +1710,10 @@ public class MainActivity extends Activity {
             );
         }
     }
+
+    // ============================================================
+    // API — НЕ МЕНЯЛ
+    // ============================================================
 
     private List<Offer> requestEntireRange(
             String origin,
@@ -1348,12 +1727,18 @@ public class MainActivity extends Activity {
                 new ArrayList<>();
 
         YearMonth month =
-                YearMonth.from(from);
+                YearMonth.from(
+                        from
+                );
 
         YearMonth lastMonth =
-                YearMonth.from(to);
+                YearMonth.from(
+                        to
+                );
 
-        while (!month.isAfter(lastMonth)) {
+        while (!month.isAfter(
+                lastMonth
+        )) {
 
             result.addAll(
                     requestMonth(
@@ -1442,7 +1827,9 @@ public class MainActivity extends Activity {
                         + encode(token);
 
         JSONObject json =
-                getJson(url);
+                getJson(
+                        url
+                );
 
         JSONArray data =
                 json.optJSONArray(
@@ -1453,6 +1840,7 @@ public class MainActivity extends Activity {
                 new ArrayList<>();
 
         if (data == null) {
+
             return result;
         }
 
@@ -1476,6 +1864,7 @@ public class MainActivity extends Activity {
             if (!"DP".equalsIgnoreCase(
                     airline
             )) {
+
                 continue;
             }
 
@@ -1536,10 +1925,6 @@ public class MainActivity extends Activity {
         return result;
     }
 
-    // ============================================================
-    // HTTP
-    // ============================================================
-
     private JSONObject getJson(
             String urlString
     ) throws Exception {
@@ -1569,7 +1954,7 @@ public class MainActivity extends Activity {
 
         connection.setRequestProperty(
                 "User-Agent",
-                "PobedaRadar/2.2"
+                "PobedaRadar/0.7"
         );
 
         int code =
@@ -1582,7 +1967,9 @@ public class MainActivity extends Activity {
                         : connection.getErrorStream();
 
         String response =
-                readStream(stream);
+                readStream(
+                        stream
+                );
 
         connection.disconnect();
 
@@ -1611,7 +1998,9 @@ public class MainActivity extends Activity {
         }
 
         JSONObject json =
-                new JSONObject(response);
+                new JSONObject(
+                        response
+                );
 
         if (!json.optBoolean(
                 "success",
@@ -1629,6 +2018,29 @@ public class MainActivity extends Activity {
     // ============================================================
     // UTIL
     // ============================================================
+
+    private String formatTime(
+            long millis
+    ) {
+
+        try {
+
+            return Instant.ofEpochMilli(
+                            millis
+                    )
+                    .atZone(
+                            ZoneId.systemDefault()
+                    )
+                    .toLocalTime()
+                    .format(
+                            timeFormat
+                    );
+
+        } catch (Exception e) {
+
+            return "";
+        }
+    }
 
     private String readStream(
             InputStream stream
@@ -1655,7 +2067,9 @@ public class MainActivity extends Activity {
                 reader.readLine())
                 != null) {
 
-            builder.append(line);
+            builder.append(
+                    line
+            );
         }
 
         reader.close();
@@ -1734,10 +2148,17 @@ public class MainActivity extends Activity {
             );
         }
 
-        button.setBackground(background);
-        button.setTextColor(DARK);
-        button.setAlpha(1.0f);
-        button.setEnabled(true);
+        button.setBackground(
+                background
+        );
+
+        button.setTextColor(
+                DARK
+        );
+
+        button.setAlpha(
+                1.0f
+        );
     }
 
     private TextView makeText(
@@ -1825,7 +2246,25 @@ public class MainActivity extends Activity {
                         "%,d ₽",
                         value
                 )
-                .replace(',', ' ');
+                .replace(
+                        ',',
+                        ' '
+                );
+    }
+
+    private String formatPriceCompact(
+            int value
+    ) {
+
+        return String.format(
+                        new Locale("ru"),
+                        "%,d",
+                        value
+                )
+                .replace(
+                        ',',
+                        ' '
+                );
     }
 
     private String formatShortNumber(
@@ -1837,7 +2276,10 @@ public class MainActivity extends Activity {
                         "%,d",
                         value
                 )
-                .replace(',', ' ');
+                .replace(
+                        ',',
+                        ' '
+                );
     }
 
     private String encode(
@@ -1885,61 +2327,6 @@ public class MainActivity extends Activity {
             this.price = price;
             this.flight = flight;
             this.link = link;
-        }
-    }
-
-    private static class PriceChange {
-
-        static final int TYPE_NONE = 0;
-        static final int TYPE_UP = 1;
-        static final int TYPE_DOWN = 2;
-        static final int TYPE_SAME = 3;
-
-        final int type;
-        final int amount;
-
-        private PriceChange(
-                int type,
-                int amount
-        ) {
-
-            this.type = type;
-            this.amount = amount;
-        }
-
-        static PriceChange noChange() {
-            return new PriceChange(
-                    TYPE_NONE,
-                    0
-            );
-        }
-
-        static PriceChange up(
-                int amount
-        ) {
-
-            return new PriceChange(
-                    TYPE_UP,
-                    amount
-            );
-        }
-
-        static PriceChange down(
-                int amount
-        ) {
-
-            return new PriceChange(
-                    TYPE_DOWN,
-                    amount
-            );
-        }
-
-        static PriceChange same() {
-
-            return new PriceChange(
-                    TYPE_SAME,
-                    0
-            );
         }
     }
 }
