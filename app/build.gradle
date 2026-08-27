@@ -7,15 +7,19 @@ android {
     compileSdk 35
 
     defaultConfig {
-        applicationId 'ru.pobedaradar.app'
+        applicationId "ru.pobedaradar.app"
         minSdk 26
         targetSdk 35
-        versionCode 1
-        versionName '1.0'
+        versionCode 8
+        versionName "0.8"
     }
+}
 
-    compileOptions {
-        sourceCompatibility JavaVersion.VERSION_17
-        targetCompatibility JavaVersion.VERSION_17
-    }
+repositories {
+    google()
+    mavenCentral()
+}
+
+dependencies {
+    implementation "androidx.work:work-runtime:2.11.2"
 }
