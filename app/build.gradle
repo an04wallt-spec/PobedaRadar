@@ -15,11 +15,7 @@ android {
     }
 }
 
-repositories {
-    google()
-    mavenCentral()
-}
-
 dependencies {
     implementation "androidx.work:work-runtime:2.11.2"
+    implementation "androidx.core:core:1.15.0"
 }
