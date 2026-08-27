@@ -33,7 +33,6 @@ import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.YearMonth;
 import java.time.format.DateTimeFormatter;
-import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
@@ -44,11 +43,16 @@ import java.util.Map;
 public class MainActivity extends Activity {
 
     private static final String PREFS = "pobeda_radar";
+
     private static final String TOKEN_KEY = "travelpayouts_token";
     private static final String DATE_FROM_KEY = "date_from";
     private static final String DATE_TO_KEY = "date_to";
 
+    private static final String LAST_PRICE_PREFIX = "last_price_";
+    private static final String MIN_PRICE_PREFIX = "min_price_";
+
     private static final int RED = Color.rgb(210, 30, 30);
+    private static final int GREEN = Color.rgb(35, 135, 70);
     private static final int GREY = Color.rgb(105, 105, 105);
     private static final int LIGHT_GREY = Color.rgb(236, 236, 236);
     private static final int DARK = Color.rgb(28, 28, 28);
@@ -96,11 +100,9 @@ public class MainActivity extends Activity {
         refreshInterface();
     }
 
-    /*
-     * ============================================================
-     * СОХРАНЕНИЕ ДАТ
-     * ============================================================
-     */
+    // ============================================================
+    // ДАТЫ
+    // ============================================================
 
     private void restoreDates() {
 
@@ -147,54 +149,43 @@ public class MainActivity extends Activity {
                 .apply();
     }
 
-    /*
-     * ============================================================
-     * ИНТЕРФЕЙС
-     * ============================================================
-     */
+    // ============================================================
+    // ИНТЕРФЕЙС
+    // ============================================================
 
     private void buildInterface() {
 
         root = new LinearLayout(this);
-
         root.setOrientation(LinearLayout.VERTICAL);
 
-        /*
-         * Никакого ScrollView.
-         *
-         * Верхняя строка опущена ещё примерно на 2 мм.
-         */
+        // Без ScrollView. Интерфейс рассчитан на один экран.
         root.setPadding(
                 dp(16),
                 dp(38),
                 dp(16),
-                dp(10)
+                dp(8)
         );
 
-        /*
-         * Заголовок.
-         */
-        TextView title = makeText(
-                "Москва ⇄ Газипаша · Победа (DP)",
-                16,
-                true
-        );
+        TextView title =
+                makeText(
+                        "Москва ⇄ Газипаша · Победа (DP)",
+                        16,
+                        true
+                );
 
         title.setTextColor(GREY);
         title.setGravity(Gravity.CENTER);
         title.setSingleLine(true);
 
-        LinearLayout.LayoutParams titleLp =
+        root.addView(
+                title,
                 new LinearLayout.LayoutParams(
                         LinearLayout.LayoutParams.MATCH_PARENT,
                         dp(26)
-                );
+                )
+        );
 
-        root.addView(title, titleLp);
-
-        /*
-         * Направление.
-         */
+        // Направление
         LinearLayout directionRow =
                 new LinearLayout(this);
 
@@ -203,10 +194,16 @@ public class MainActivity extends Activity {
         );
 
         outButton =
-                makeButton("МОСКВА → GZP", 14);
+                makeButton(
+                        "МОСКВА → GZP",
+                        14
+                );
 
         backButton =
-                makeButton("GZP → МОСКВА", 14);
+                makeButton(
+                        "GZP → МОСКВА",
+                        14
+                );
 
         directionRow.addView(
                 outButton,
@@ -244,7 +241,10 @@ public class MainActivity extends Activity {
 
         directionLp.topMargin = dp(4);
 
-        root.addView(directionRow, directionLp);
+        root.addView(
+                directionRow,
+                directionLp
+        );
 
         outButton.setOnClickListener(v -> {
             outbound = true;
@@ -256,9 +256,7 @@ public class MainActivity extends Activity {
             refreshInterface();
         });
 
-        /*
-         * Ближайшие даты.
-         */
+        // Ближайшие даты
         TextView weekTitle =
                 makeText(
                         "Ближайшие даты",
@@ -271,10 +269,10 @@ public class MainActivity extends Activity {
         LinearLayout.LayoutParams weekTitleLp =
                 new LinearLayout.LayoutParams(
                         LinearLayout.LayoutParams.MATCH_PARENT,
-                        dp(25)
+                        dp(24)
                 );
 
-        weekTitleLp.topMargin = dp(7);
+        weekTitleLp.topMargin = dp(6);
 
         root.addView(
                 weekTitle,
@@ -288,20 +286,15 @@ public class MainActivity extends Activity {
                 LinearLayout.VERTICAL
         );
 
-        /*
-         * Ровно 7 строк × 23 dp.
-         */
         root.addView(
                 weekBox,
                 new LinearLayout.LayoutParams(
                         LinearLayout.LayoutParams.MATCH_PARENT,
-                        dp(161)
+                        dp(154)
                 )
         );
 
-        /*
-         * Диапазон.
-         */
+        // Диапазон дат
         TextView datesCaption =
                 makeText(
                         "Диапазон дат",
@@ -312,10 +305,10 @@ public class MainActivity extends Activity {
         LinearLayout.LayoutParams captionLp =
                 new LinearLayout.LayoutParams(
                         LinearLayout.LayoutParams.MATCH_PARENT,
-                        dp(23)
+                        dp(22)
                 );
 
-        captionLp.topMargin = dp(5);
+        captionLp.topMargin = dp(4);
 
         root.addView(
                 datesCaption,
@@ -339,7 +332,7 @@ public class MainActivity extends Activity {
                 fromButton,
                 new LinearLayout.LayoutParams(
                         0,
-                        dp(44),
+                        dp(42),
                         1
                 )
         );
@@ -358,7 +351,7 @@ public class MainActivity extends Activity {
                 toButton,
                 new LinearLayout.LayoutParams(
                         0,
-                        dp(44),
+                        dp(42),
                         1
                 )
         );
@@ -367,7 +360,7 @@ public class MainActivity extends Activity {
                 datesRow,
                 new LinearLayout.LayoutParams(
                         LinearLayout.LayoutParams.MATCH_PARENT,
-                        dp(44)
+                        dp(42)
                 )
         );
 
@@ -379,10 +372,7 @@ public class MainActivity extends Activity {
                 v -> pickDate(false)
         );
 
-        /*
-         * Токен.
-         * После сохранения этот блок полностью исчезает.
-         */
+        // Токен
         tokenBlock =
                 new LinearLayout(this);
 
@@ -402,47 +392,40 @@ public class MainActivity extends Activity {
                         | InputType.TYPE_TEXT_VARIATION_PASSWORD
         );
 
-        tokenInput.setText(
+        String savedToken =
                 prefs.getString(
                         TOKEN_KEY,
                         ""
-                )
-        );
+                );
+
+        tokenInput.setText(savedToken);
 
         tokenBlock.addView(
                 tokenInput,
                 new LinearLayout.LayoutParams(
                         LinearLayout.LayoutParams.MATCH_PARENT,
-                        dp(40)
+                        dp(38)
                 )
         );
 
         LinearLayout.LayoutParams tokenLp =
                 new LinearLayout.LayoutParams(
                         LinearLayout.LayoutParams.MATCH_PARENT,
-                        dp(40)
+                        dp(38)
                 );
 
-        tokenLp.topMargin = dp(5);
+        tokenLp.topMargin = dp(4);
 
         root.addView(
                 tokenBlock,
                 tokenLp
         );
 
-        if (!prefs.getString(
-                TOKEN_KEY,
-                ""
-        ).isEmpty()) {
-
-            tokenBlock.setVisibility(
-                    View.GONE
-            );
+        if (!savedToken.isEmpty()) {
+            tokenBlock.setVisibility(View.GONE);
         }
 
-        /*
-         * Обновить радар.
-         */
+        // Обновить
         Button refreshButton =
                 makeButton(
                         "ОБНОВИТЬ РАДАР",
@@ -452,10 +435,10 @@ public class MainActivity extends Activity {
         LinearLayout.LayoutParams refreshLp =
                 new LinearLayout.LayoutParams(
                         LinearLayout.LayoutParams.MATCH_PARENT,
-                        dp(46)
+                        dp(44)
                 );
 
-        refreshLp.topMargin = dp(6);
+        refreshLp.topMargin = dp(5);
 
         root.addView(
                 refreshButton,
@@ -466,9 +449,7 @@ public class MainActivity extends Activity {
                 v -> loadRadar()
         );
 
-        /*
-         * Статус.
-         */
+        // Результат
         resultText =
                 makeText(
                         "",
@@ -476,17 +457,15 @@ public class MainActivity extends Activity {
                         true
                 );
 
-        resultText.setGravity(
-                Gravity.CENTER
-        );
+        resultText.setGravity(Gravity.CENTER);
 
         LinearLayout.LayoutParams resultLp =
                 new LinearLayout.LayoutParams(
                         LinearLayout.LayoutParams.MATCH_PARENT,
-                        dp(24)
+                        dp(23)
                 );
 
-        resultLp.topMargin = dp(4);
+        resultLp.topMargin = dp(3);
 
         root.addView(
                 resultText,
@@ -508,24 +487,20 @@ public class MainActivity extends Activity {
                 statusText,
                 new LinearLayout.LayoutParams(
                         LinearLayout.LayoutParams.MATCH_PARENT,
-                        dp(34)
+                        dp(32)
                 )
         );
 
-        /*
-         * Индикатор.
-         */
+        // Индикатор
         progress =
                 new ProgressBar(this);
 
-        progress.setVisibility(
-                View.GONE
-        );
+        progress.setVisibility(View.GONE);
 
         LinearLayout.LayoutParams progressLp =
                 new LinearLayout.LayoutParams(
-                        dp(26),
-                        dp(26)
+                        dp(24),
+                        dp(24)
                 );
 
         progressLp.gravity =
@@ -536,9 +511,7 @@ public class MainActivity extends Activity {
                 progressLp
         );
 
-        /*
-         * Победа.
-         */
+        // Сайт Победы
         Button pobedaButton =
                 makeSmallButton(
                         "Проверить на сайте Победы"
@@ -547,7 +520,7 @@ public class MainActivity extends Activity {
         LinearLayout.LayoutParams pobedaLp =
                 new LinearLayout.LayoutParams(
                         LinearLayout.LayoutParams.WRAP_CONTENT,
-                        dp(38)
+                        dp(36)
                 );
 
         pobedaLp.gravity =
@@ -598,16 +571,14 @@ public class MainActivity extends Activity {
         );
 
         fromButton.setText(
-                "С  "
-                        + rangeFrom.format(uiDate)
+                "С  " + rangeFrom.format(uiDate)
         );
 
         toButton.setText(
-                "ПО  "
-                        + rangeTo.format(uiDate)
+                "ПО  " + rangeTo.format(uiDate)
         );
 
-        showBlankWeek();
+        showStoredWeek();
 
         resultText.setText("");
 
@@ -618,13 +589,11 @@ public class MainActivity extends Activity {
         );
     }
 
-    /*
-     * ============================================================
-     * БЛИЖАЙШИЕ 7 ДНЕЙ
-     * ============================================================
-     */
+    // ============================================================
+    // БЛИЖАЙШИЕ ДАТЫ + ИСТОРИЯ
+    // ============================================================
 
-    private void showBlankWeek() {
+    private void showStoredWeek() {
 
         weekBox.removeAllViews();
 
@@ -637,37 +606,56 @@ public class MainActivity extends Activity {
 
                 addWeekRow(
                         day,
-                        ""
+                        "",
+                        PriceChange.noChange()
+                );
+
+                continue;
+            }
+
+            int storedPrice =
+                    getStoredLastPrice(day);
+
+            if (storedPrice > 0) {
+
+                addWeekRow(
+                        day,
+                        formatPrice(storedPrice),
+                        PriceChange.noChange()
                 );
 
             } else {
 
                 addWeekRow(
                         day,
-                        "—"
+                        "—",
+                        PriceChange.noChange()
                 );
             }
         }
     }
 
-    private void showWeek(
-            List<Offer> offers
+    private void showWeekAndSaveHistory(
+            List<Offer> offers,
+            boolean historyOutbound
     ) {
 
         weekBox.removeAllViews();
 
-        Map<LocalDate, Integer> best =
+        Map<LocalDate, Integer> currentPrices =
                 new LinkedHashMap<>();
 
         for (Offer offer : offers) {
 
             Integer old =
-                    best.get(offer.date);
+                    currentPrices.get(
+                            offer.date
+                    );
 
             if (old == null
                     || offer.price < old) {
 
-                best.put(
+                currentPrices.put(
                         offer.date,
                         offer.price
                 );
@@ -683,27 +671,84 @@ public class MainActivity extends Activity {
 
                 addWeekRow(
                         day,
-                        ""
+                        "",
+                        PriceChange.noChange()
                 );
 
                 continue;
             }
 
-            Integer price =
-                    best.get(day);
+            Integer newPrice =
+                    currentPrices.get(day);
+
+            if (newPrice == null) {
+
+                addWeekRow(
+                        day,
+                        "нет данных",
+                        PriceChange.noChange()
+                );
+
+                continue;
+            }
+
+            int oldPrice =
+                    getStoredLastPrice(
+                            day,
+                            historyOutbound
+                    );
+
+            PriceChange change;
+
+            if (oldPrice <= 0) {
+
+                change =
+                        PriceChange.noChange();
+
+            } else {
+
+                int difference =
+                        newPrice - oldPrice;
+
+                if (difference > 0) {
+
+                    change =
+                            PriceChange.up(
+                                    difference
+                            );
+
+                } else if (difference < 0) {
+
+                    change =
+                            PriceChange.down(
+                                    Math.abs(difference)
+                            );
+
+                } else {
+
+                    change =
+                            PriceChange.same();
+                }
+            }
 
             addWeekRow(
                     day,
-                    price == null
-                            ? "нет данных"
-                            : formatPrice(price)
+                    formatPrice(newPrice),
+                    change
+            );
+
+            savePriceHistory(
+                    day,
+                    newPrice,
+                    historyOutbound
             );
         }
     }
 
     private void addWeekRow(
             LocalDate date,
-            String price
+            String price,
+            PriceChange change
     ) {
 
         LinearLayout row =
@@ -717,59 +762,277 @@ public class MainActivity extends Activity {
                 Gravity.CENTER_VERTICAL
         );
 
-        TextView d =
+        TextView dateText =
                 makeText(
                         date.format(weekDate),
                         13,
                         false
                 );
 
-        d.setTextColor(GREY);
+        dateText.setTextColor(GREY);
 
-        TextView p =
+        row.addView(
+                dateText,
+                new LinearLayout.LayoutParams(
+                        0,
+                        dp(22),
+                        0.8f
+                )
+        );
+
+        TextView priceText =
                 makeText(
                         price,
                         13,
                         true
                 );
 
-        p.setTextColor(
-                price.equals("нет данных")
-                        ? GREY
-                        : DARK
-        );
-
-        p.setGravity(
+        priceText.setGravity(
                 Gravity.END
                         | Gravity.CENTER_VERTICAL
         );
 
+        if ("нет данных".equals(price)
+                || "—".equals(price)
+                || price.isEmpty()) {
+
+            priceText.setTextColor(GREY);
+
+        } else {
+
+            priceText.setTextColor(DARK);
+        }
+
         row.addView(
-                d,
+                priceText,
                 new LinearLayout.LayoutParams(
                         0,
-                        dp(23),
-                        1
+                        dp(22),
+                        1.1f
                 )
         );
 
+        TextView changeText =
+                makeText(
+                        formatChange(change),
+                        12,
+                        true
+                );
+
+        changeText.setGravity(
+                Gravity.END
+                        | Gravity.CENTER_VERTICAL
+        );
+
+        if (change.type == PriceChange.TYPE_UP) {
+
+            changeText.setTextColor(RED);
+
+        } else if (
+                change.type
+                        == PriceChange.TYPE_DOWN
+        ) {
+
+            changeText.setTextColor(GREEN);
+
+        } else {
+
+            changeText.setTextColor(GREY);
+        }
+
         row.addView(
-                p,
+                changeText,
                 new LinearLayout.LayoutParams(
                         0,
-                        dp(23),
-                        1
+                        dp(22),
+                        0.9f
                 )
         );
 
         weekBox.addView(row);
     }
 
-    /*
-     * ============================================================
-     * ВЫБОР ДАТ
-     * ============================================================
-     */
+    private String formatChange(
+            PriceChange change
+    ) {
+
+        if (change == null
+                || change.type
+                == PriceChange.TYPE_NONE) {
+
+            return "";
+        }
+
+        if (change.type
+                == PriceChange.TYPE_UP) {
+
+            return "↑"
+                    + formatShortNumber(
+                    change.amount
+            );
+        }
+
+        if (change.type
+                == PriceChange.TYPE_DOWN) {
+
+            return "↓"
+                    + formatShortNumber(
+                    change.amount
+            );
+        }
+
+        if (change.type
+                == PriceChange.TYPE_SAME) {
+
+            return "=";
+        }
+
+        return "";
+    }
+
+    // ============================================================
+    // ХРАНЕНИЕ ЦЕН
+    // ============================================================
+
+    private String routeHistoryId() {
+
+        return outbound
+                ? "MOW_GZP"
+                : "GZP_MOW";
+    }
+
+    private String routeHistoryId(
+            boolean isOutbound
+    ) {
+
+        return isOutbound
+                ? "MOW_GZP"
+                : "GZP_MOW";
+    }
+
+    private String lastPriceKey(
+            LocalDate date
+    ) {
+
+        return LAST_PRICE_PREFIX
+                + routeHistoryId()
+                + "_"
+                + date;
+    }
+
+    private String lastPriceKey(
+            LocalDate date,
+            boolean isOutbound
+    ) {
+
+        return LAST_PRICE_PREFIX
+                + routeHistoryId(
+                isOutbound
+        )
+                + "_"
+                + date;
+    }
+
+    private String minPriceKey(
+            LocalDate date,
+            boolean isOutbound
+    ) {
+
+        return MIN_PRICE_PREFIX
+                + routeHistoryId(
+                isOutbound
+        )
+                + "_"
+                + date;
+    }
+
+    private int getStoredLastPrice(
+            LocalDate date
+    ) {
+
+        return prefs.getInt(
+                lastPriceKey(date),
+                -1
+        );
+    }
+
+    private int getStoredLastPrice(
+            LocalDate date,
+            boolean isOutbound
+    ) {
+
+        return prefs.getInt(
+                lastPriceKey(
+                        date,
+                        isOutbound
+                ),
+                -1
+        );
+    }
+
+    private int getStoredMinPrice(
+            LocalDate date,
+            boolean isOutbound
+    ) {
+
+        return prefs.getInt(
+                minPriceKey(
+                        date,
+                        isOutbound
+                ),
+                -1
+        );
+    }
+
+    private void savePriceHistory(
+            LocalDate date,
+            int currentPrice,
+            boolean isOutbound
+    ) {
+
+        int oldMinimum =
+                getStoredMinPrice(
+                        date,
+                        isOutbound
+                );
+
+        int newMinimum;
+
+        if (oldMinimum <= 0) {
+
+            newMinimum =
+                    currentPrice;
+
+        } else {
+
+            newMinimum =
+                    Math.min(
+                            oldMinimum,
+                            currentPrice
+                    );
+        }
+
+        prefs.edit()
+                .putInt(
+                        lastPriceKey(
+                                date,
+                                isOutbound
+                        ),
+                        currentPrice
+                )
+                .putInt(
+                        minPriceKey(
+                                date,
+                                isOutbound
+                        ),
+                        newMinimum
+                )
+                .apply();
+    }
+
+    // ============================================================
+    // ВЫБОР ДАТ
+    // ============================================================
 
     private void pickDate(
             boolean start
@@ -821,6 +1084,7 @@ public class MainActivity extends Activity {
 
                             saveDates();
                             refreshInterface();
+
                         },
                         current.getYear(),
                         current.getMonthValue() - 1,
@@ -836,11 +1100,9 @@ public class MainActivity extends Activity {
         dialog.show();
     }
 
-    /*
-     * ============================================================
-     * ЗАГРУЗКА ЦЕН
-     * ============================================================
-     */
+    // ============================================================
+    // ЗАПРОС ЦЕН
+    // ============================================================
 
     private void loadRadar() {
 
@@ -880,13 +1142,22 @@ public class MainActivity extends Activity {
         final String finalToken =
                 token;
 
+        final boolean requestedOutbound =
+                outbound;
+
+        final LocalDate requestedFrom =
+                rangeFrom;
+
+        final LocalDate requestedTo =
+                rangeTo;
+
         final String origin =
-                outbound
+                requestedOutbound
                         ? "MOW"
                         : "GZP";
 
         final String destination =
-                outbound
+                requestedOutbound
                         ? "GZP"
                         : "MOW";
 
@@ -901,9 +1172,9 @@ public class MainActivity extends Activity {
         );
 
         statusText.setText(
-                rangeFrom.format(uiDate)
+                requestedFrom.format(uiDate)
                         + " — "
-                        + rangeTo.format(uiDate)
+                        + requestedTo.format(uiDate)
         );
 
         new Thread(() -> {
@@ -914,8 +1185,8 @@ public class MainActivity extends Activity {
                         requestEntireRange(
                                 origin,
                                 destination,
-                                rangeFrom,
-                                rangeTo,
+                                requestedFrom,
+                                requestedTo,
                                 finalToken
                         );
 
@@ -936,7 +1207,39 @@ public class MainActivity extends Activity {
                             View.GONE
                     );
 
-                    showWeek(offers);
+                    /*
+                     * Историю сохраняем именно
+                     * для направления запроса.
+                     */
+                    if (outbound
+                            == requestedOutbound
+                            && rangeFrom.equals(
+                            requestedFrom
+                    )
+                            && rangeTo.equals(
+                            requestedTo
+                    )) {
+
+                        showWeekAndSaveHistory(
+                                offers,
+                                requestedOutbound
+                        );
+
+                    } else {
+
+                        /*
+                         * Пользователь успел переключить
+                         * направление или изменить даты.
+                         * Историю всё равно сохраняем,
+                         * но не рисуем её поверх новой вкладки.
+                         */
+                        saveHistoryWithoutDrawing(
+                                offers,
+                                requestedOutbound
+                        );
+
+                        showStoredWeek();
+                    }
 
                     if (offers.isEmpty()) {
 
@@ -997,15 +1300,42 @@ public class MainActivity extends Activity {
         }).start();
     }
 
-    /*
-     * Делим выбранный диапазон на месяцы.
-     *
-     * Например:
-     * 25.09 — 10.10
-     *
-     * = отдельный запрос за сентябрь
-     * + отдельный запрос за октябрь.
-     */
+    private void saveHistoryWithoutDrawing(
+            List<Offer> offers,
+            boolean historyOutbound
+    ) {
+
+        Map<LocalDate, Integer> currentPrices =
+                new LinkedHashMap<>();
+
+        for (Offer offer : offers) {
+
+            Integer current =
+                    currentPrices.get(
+                            offer.date
+                    );
+
+            if (current == null
+                    || offer.price < current) {
+
+                currentPrices.put(
+                        offer.date,
+                        offer.price
+                );
+            }
+        }
+
+        for (Map.Entry<LocalDate, Integer> entry
+                : currentPrices.entrySet()) {
+
+            savePriceHistory(
+                    entry.getKey(),
+                    entry.getValue(),
+                    historyOutbound
+            );
+        }
+    }
+
     private List<Offer> requestEntireRange(
             String origin,
             String destination,
@@ -1040,10 +1370,6 @@ public class MainActivity extends Activity {
                     month.plusMonths(1);
         }
 
-        /*
-         * Удаляем дубли:
-         * одна дата + один номер рейса + одна цена.
-         */
         Map<String, Offer> unique =
                 new LinkedHashMap<>();
 
@@ -1082,14 +1408,6 @@ public class MainActivity extends Activity {
         return result;
     }
 
-    /*
-     * Основной запрос:
-     *
-     * /aviasales/v3/prices_for_dates
-     *
-     * Берём много результатов за конкретный месяц,
-     * потом уже сами оставляем только DP.
-     */
     private List<Offer> requestMonth(
             String origin,
             String destination,
@@ -1149,9 +1467,6 @@ public class MainActivity extends Activity {
                 continue;
             }
 
-            /*
-             * Нас интересует только Победа.
-             */
             String airline =
                     item.optString(
                             "airline",
@@ -1161,14 +1476,9 @@ public class MainActivity extends Activity {
             if (!"DP".equalsIgnoreCase(
                     airline
             )) {
-
                 continue;
             }
 
-            /*
-             * На всякий случай ещё фильтруем
-             * прямой перелёт.
-             */
             int transfers =
                     item.optInt(
                             "transfers",
@@ -1207,24 +1517,18 @@ public class MainActivity extends Activity {
                 continue;
             }
 
-            String flight =
-                    item.optString(
-                            "flight_number",
-                            ""
-                    );
-
-            String link =
-                    item.optString(
-                            "link",
-                            ""
-                    );
-
             result.add(
                     new Offer(
                             date,
                             price,
-                            flight,
-                            link
+                            item.optString(
+                                    "flight_number",
+                                    ""
+                            ),
+                            item.optString(
+                                    "link",
+                                    ""
+                            )
                     )
             );
         }
@@ -1232,11 +1536,9 @@ public class MainActivity extends Activity {
         return result;
     }
 
-    /*
-     * ============================================================
-     * HTTP
-     * ============================================================
-     */
+    // ============================================================
+    // HTTP
+    // ============================================================
 
     private JSONObject getJson(
             String urlString
@@ -1267,7 +1569,7 @@ public class MainActivity extends Activity {
 
         connection.setRequestProperty(
                 "User-Agent",
-                "PobedaRadar/2.0"
+                "PobedaRadar/2.2"
         );
 
         int code =
@@ -1309,9 +1611,7 @@ public class MainActivity extends Activity {
         }
 
         JSONObject json =
-                new JSONObject(
-                        response
-                );
+                new JSONObject(response);
 
         if (!json.optBoolean(
                 "success",
@@ -1325,6 +1625,10 @@ public class MainActivity extends Activity {
 
         return json;
     }
+
+    // ============================================================
+    // UTIL
+    // ============================================================
 
     private String readStream(
             InputStream stream
@@ -1358,12 +1662,6 @@ public class MainActivity extends Activity {
 
         return builder.toString();
     }
-
-    /*
-     * ============================================================
-     * UTIL
-     * ============================================================
-     */
 
     private LocalDate parseDepartureDate(
             String value
@@ -1436,21 +1734,10 @@ public class MainActivity extends Activity {
             );
         }
 
-        button.setBackground(
-                background
-        );
-
-        button.setTextColor(
-                DARK
-        );
-
-        button.setAlpha(
-                1.0f
-        );
-
-        button.setEnabled(
-                true
-        );
+        button.setBackground(background);
+        button.setTextColor(DARK);
+        button.setAlpha(1.0f);
+        button.setEnabled(true);
     }
 
     private TextView makeText(
@@ -1465,6 +1752,7 @@ public class MainActivity extends Activity {
         view.setText(value);
         view.setTextSize(size);
         view.setTextColor(DARK);
+
         view.setGravity(
                 Gravity.CENTER_VERTICAL
         );
@@ -1490,10 +1778,7 @@ public class MainActivity extends Activity {
 
         button.setText(value);
         button.setTextSize(size);
-
-        button.setAllCaps(
-                false
-        );
+        button.setAllCaps(false);
 
         button.setTypeface(
                 Typeface.DEFAULT,
@@ -1518,14 +1803,8 @@ public class MainActivity extends Activity {
                 new Button(this);
 
         button.setText(value);
-
-        button.setTextSize(
-                12
-        );
-
-        button.setAllCaps(
-                false
-        );
+        button.setTextSize(12);
+        button.setAllCaps(false);
 
         button.setPadding(
                 dp(12),
@@ -1546,10 +1825,19 @@ public class MainActivity extends Activity {
                         "%,d ₽",
                         value
                 )
-                .replace(
-                        ',',
-                        ' '
-                );
+                .replace(',', ' ');
+    }
+
+    private String formatShortNumber(
+            int value
+    ) {
+
+        return String.format(
+                        new Locale("ru"),
+                        "%,d",
+                        value
+                )
+                .replace(',', ' ');
     }
 
     private String encode(
@@ -1575,6 +1863,10 @@ public class MainActivity extends Activity {
         );
     }
 
+    // ============================================================
+    // DATA
+    // ============================================================
+
     private static class Offer {
 
         final LocalDate date;
@@ -1593,6 +1885,61 @@ public class MainActivity extends Activity {
             this.price = price;
             this.flight = flight;
             this.link = link;
+        }
+    }
+
+    private static class PriceChange {
+
+        static final int TYPE_NONE = 0;
+        static final int TYPE_UP = 1;
+        static final int TYPE_DOWN = 2;
+        static final int TYPE_SAME = 3;
+
+        final int type;
+        final int amount;
+
+        private PriceChange(
+                int type,
+                int amount
+        ) {
+
+            this.type = type;
+            this.amount = amount;
+        }
+
+        static PriceChange noChange() {
+            return new PriceChange(
+                    TYPE_NONE,
+                    0
+            );
+        }
+
+        static PriceChange up(
+                int amount
+        ) {
+
+            return new PriceChange(
+                    TYPE_UP,
+                    amount
+            );
+        }
+
+        static PriceChange down(
+                int amount
+        ) {
+
+            return new PriceChange(
+                    TYPE_DOWN,
+                    amount
+            );
+        }
+
+        static PriceChange same() {
+
+            return new PriceChange(
+                    TYPE_SAME,
+                    0
+            );
         }
     }
 }
