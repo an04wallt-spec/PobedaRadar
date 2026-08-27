@@ -16,7 +16,6 @@ import android.widget.Button;
 import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
-import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -32,58 +31,59 @@ import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
+import java.time.YearMonth;
 import java.time.format.DateTimeFormatter;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 
 public class MainActivity extends Activity {
 
     private static final String PREFS = "pobeda_radar";
-
     private static final String TOKEN_KEY = "travelpayouts_token";
     private static final String DATE_FROM_KEY = "date_from";
     private static final String DATE_TO_KEY = "date_to";
 
-    private static final int RED = Color.rgb(210, 32, 32);
-    private static final int GREY_TEXT = Color.rgb(105, 105, 105);
-    private static final int BUTTON_BG = Color.rgb(235, 235, 235);
-    private static final int BUTTON_ACTIVE_BG = Color.rgb(248, 248, 248);
+    private static final int RED = Color.rgb(210, 30, 30);
+    private static final int GREY = Color.rgb(105, 105, 105);
+    private static final int LIGHT_GREY = Color.rgb(236, 236, 236);
+    private static final int DARK = Color.rgb(28, 28, 28);
 
     private final DateTimeFormatter uiDate =
             DateTimeFormatter.ofPattern("dd.MM.yyyy", new Locale("ru"));
 
-    private final DateTimeFormatter shortDate =
+    private final DateTimeFormatter weekDate =
             DateTimeFormatter.ofPattern("dd.MM", new Locale("ru"));
 
-    private LinearLayout root;
-    private LinearLayout resultsBox;
-    private LinearLayout nearestBox;
-    private LinearLayout tokenBlock;
-    private LinearLayout tokenSavedBlock;
+    private final DateTimeFormatter monthParam =
+            DateTimeFormatter.ofPattern("yyyy-MM");
 
-    private TextView summary;
-    private TextView status;
-
-    private ProgressBar progress;
-    private EditText tokenInput;
-
-    private Button outBtn;
-    private Button backBtn;
-    private Button fromBtn;
-    private Button toBtn;
+    private SharedPreferences prefs;
 
     private boolean outbound = true;
 
-    /*
-     * Один общий диапазон для обоих направлений.
-     * Переключение направления его больше не меняет.
-     */
     private LocalDate rangeFrom;
     private LocalDate rangeTo;
 
-    private SharedPreferences prefs;
+    private LinearLayout root;
+    private LinearLayout weekBox;
+    private LinearLayout tokenBlock;
+
+    private Button outButton;
+    private Button backButton;
+    private Button fromButton;
+    private Button toButton;
+
+    private EditText tokenInput;
+
+    private TextView resultText;
+    private TextView statusText;
+
+    private ProgressBar progress;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -91,34 +91,39 @@ public class MainActivity extends Activity {
 
         prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
 
-        loadSavedDates();
-
-        buildUi();
-        updateDirectionUi();
+        restoreDates();
+        buildInterface();
+        refreshInterface();
     }
 
-    private void loadSavedDates() {
+    /*
+     * ============================================================
+     * СОХРАНЕНИЕ ДАТ
+     * ============================================================
+     */
+
+    private void restoreDates() {
 
         LocalDate today = LocalDate.now();
 
-        String savedFrom =
-                prefs.getString(DATE_FROM_KEY, "");
-
-        String savedTo =
-                prefs.getString(DATE_TO_KEY, "");
-
         try {
-            rangeFrom = savedFrom.isEmpty()
-                    ? today
-                    : LocalDate.parse(savedFrom);
+            rangeFrom = LocalDate.parse(
+                    prefs.getString(
+                            DATE_FROM_KEY,
+                            today.toString()
+                    )
+            );
         } catch (Exception e) {
             rangeFrom = today;
         }
 
         try {
-            rangeTo = savedTo.isEmpty()
-                    ? today.plusDays(30)
-                    : LocalDate.parse(savedTo);
+            rangeTo = LocalDate.parse(
+                    prefs.getString(
+                            DATE_TO_KEY,
+                            today.plusDays(30).toString()
+                    )
+            );
         } catch (Exception e) {
             rangeTo = today.plusDays(30);
         }
@@ -130,71 +135,65 @@ public class MainActivity extends Activity {
         if (rangeTo.isBefore(rangeFrom)) {
             rangeTo = rangeFrom.plusDays(30);
         }
+
+        saveDates();
     }
 
     private void saveDates() {
 
         prefs.edit()
-                .putString(
-                        DATE_FROM_KEY,
-                        rangeFrom.toString()
-                )
-                .putString(
-                        DATE_TO_KEY,
-                        rangeTo.toString()
-                )
+                .putString(DATE_FROM_KEY, rangeFrom.toString())
+                .putString(DATE_TO_KEY, rangeTo.toString())
                 .apply();
     }
 
-    private void buildUi() {
+    /*
+     * ============================================================
+     * ИНТЕРФЕЙС
+     * ============================================================
+     */
 
-        ScrollView scroll = new ScrollView(this);
+    private void buildInterface() {
 
         root = new LinearLayout(this);
+
         root.setOrientation(LinearLayout.VERTICAL);
 
         /*
-         * Ещё примерно на 2 мм ниже,
-         * чем в предыдущей версии.
+         * Никакого ScrollView.
+         *
+         * Верхняя строка опущена ещё примерно на 2 мм.
          */
         root.setPadding(
-                dp(18),
-                dp(30),
-                dp(18),
-                dp(28)
+                dp(16),
+                dp(38),
+                dp(16),
+                dp(10)
         );
 
-        scroll.addView(root);
-
         /*
-         * Верхняя строка.
+         * Заголовок.
          */
-        TextView routeTitle =
-                text(
-                        "Москва ⇄ Газипаша · Победа (DP)",
-                        17,
-                        true
-                );
+        TextView title = makeText(
+                "Москва ⇄ Газипаша · Победа (DP)",
+                16,
+                true
+        );
 
-        routeTitle.setTextColor(GREY_TEXT);
-        routeTitle.setSingleLine(true);
-        routeTitle.setGravity(Gravity.CENTER);
+        title.setTextColor(GREY);
+        title.setGravity(Gravity.CENTER);
+        title.setSingleLine(true);
 
-        LinearLayout.LayoutParams titleParams =
+        LinearLayout.LayoutParams titleLp =
                 new LinearLayout.LayoutParams(
                         LinearLayout.LayoutParams.MATCH_PARENT,
-                        LinearLayout.LayoutParams.WRAP_CONTENT
+                        dp(26)
                 );
 
-        titleParams.bottomMargin = dp(16);
-
-        root.addView(
-                routeTitle,
-                titleParams
-        );
+        root.addView(title, titleLp);
 
         /*
-         * Направления.
+         * Направление.
          */
         LinearLayout directionRow =
                 new LinearLayout(this);
@@ -203,166 +202,186 @@ public class MainActivity extends Activity {
                 LinearLayout.HORIZONTAL
         );
 
-        outBtn =
-                actionButton("МОСКВА → GZP");
+        outButton =
+                makeButton("МОСКВА → GZP", 14);
 
-        backBtn =
-                actionButton("GZP → МОСКВА");
+        backButton =
+                makeButton("GZP → МОСКВА", 14);
 
         directionRow.addView(
-                outBtn,
+                outButton,
                 new LinearLayout.LayoutParams(
                         0,
-                        dp(58),
+                        dp(46),
                         1
                 )
         );
 
-        View directionSpacer =
-                new View(this);
+        View gap1 = new View(this);
 
         directionRow.addView(
-                directionSpacer,
+                gap1,
                 new LinearLayout.LayoutParams(
-                        dp(10),
+                        dp(8),
                         1
                 )
         );
 
         directionRow.addView(
-                backBtn,
+                backButton,
                 new LinearLayout.LayoutParams(
                         0,
-                        dp(58),
+                        dp(46),
                         1
                 )
         );
 
-        root.addView(directionRow);
+        LinearLayout.LayoutParams directionLp =
+                new LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        dp(46)
+                );
 
-        outBtn.setOnClickListener(v -> {
+        directionLp.topMargin = dp(4);
 
+        root.addView(directionRow, directionLp);
+
+        outButton.setOnClickListener(v -> {
             outbound = true;
-
-            /*
-             * ВАЖНО:
-             * даты здесь НЕ меняем.
-             */
-            updateDirectionUi();
+            refreshInterface();
         });
 
-        backBtn.setOnClickListener(v -> {
-
+        backButton.setOnClickListener(v -> {
             outbound = false;
-
-            /*
-             * ВАЖНО:
-             * даты здесь НЕ меняем.
-             */
-            updateDirectionUi();
+            refreshInterface();
         });
 
         /*
          * Ближайшие даты.
          */
-        TextView nearestTitle =
-                text(
+        TextView weekTitle =
+                makeText(
                         "Ближайшие даты",
+                        13,
+                        true
+                );
+
+        weekTitle.setTextColor(GREY);
+
+        LinearLayout.LayoutParams weekTitleLp =
+                new LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        dp(25)
+                );
+
+        weekTitleLp.topMargin = dp(7);
+
+        root.addView(
+                weekTitle,
+                weekTitleLp
+        );
+
+        weekBox =
+                new LinearLayout(this);
+
+        weekBox.setOrientation(
+                LinearLayout.VERTICAL
+        );
+
+        /*
+         * Ровно 7 строк × 23 dp.
+         */
+        root.addView(
+                weekBox,
+                new LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        dp(161)
+                )
+        );
+
+        /*
+         * Диапазон.
+         */
+        TextView datesCaption =
+                makeText(
+                        "Диапазон дат",
                         14,
                         true
                 );
 
-        nearestTitle.setTextColor(GREY_TEXT);
-        nearestTitle.setPadding(
-                0,
-                dp(15),
-                0,
-                dp(5)
-        );
-
-        root.addView(nearestTitle);
-
-        nearestBox =
-                new LinearLayout(this);
-
-        nearestBox.setOrientation(
-                LinearLayout.VERTICAL
-        );
-
-        root.addView(nearestBox);
-
-        showEmptyNearestWeek();
-
-        /*
-         * Диапазон дат.
-         */
-        TextView rangeTitle =
-                text(
-                        "Диапазон дат",
-                        19,
-                        true
+        LinearLayout.LayoutParams captionLp =
+                new LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        dp(23)
                 );
 
-        rangeTitle.setPadding(
-                0,
-                dp(18),
-                0,
-                dp(7)
+        captionLp.topMargin = dp(5);
+
+        root.addView(
+                datesCaption,
+                captionLp
         );
 
-        root.addView(rangeTitle);
-
-        LinearLayout dateRow =
+        LinearLayout datesRow =
                 new LinearLayout(this);
 
-        dateRow.setOrientation(
+        datesRow.setOrientation(
                 LinearLayout.HORIZONTAL
         );
 
-        fromBtn = actionButton("");
-        toBtn = actionButton("");
+        fromButton =
+                makeButton("", 13);
 
-        dateRow.addView(
-                fromBtn,
+        toButton =
+                makeButton("", 13);
+
+        datesRow.addView(
+                fromButton,
                 new LinearLayout.LayoutParams(
                         0,
-                        dp(60),
+                        dp(44),
                         1
                 )
         );
 
-        View dateSpacer =
-                new View(this);
+        View gap2 = new View(this);
 
-        dateRow.addView(
-                dateSpacer,
+        datesRow.addView(
+                gap2,
                 new LinearLayout.LayoutParams(
-                        dp(10),
+                        dp(8),
                         1
                 )
         );
 
-        dateRow.addView(
-                toBtn,
+        datesRow.addView(
+                toButton,
                 new LinearLayout.LayoutParams(
                         0,
-                        dp(60),
+                        dp(44),
                         1
                 )
         );
 
-        root.addView(dateRow);
+        root.addView(
+                datesRow,
+                new LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        dp(44)
+                )
+        );
 
-        fromBtn.setOnClickListener(
+        fromButton.setOnClickListener(
                 v -> pickDate(true)
         );
 
-        toBtn.setOnClickListener(
+        toButton.setOnClickListener(
                 v -> pickDate(false)
         );
 
         /*
-         * TOKEN.
+         * Токен.
+         * После сохранения этот блок полностью исчезает.
          */
         tokenBlock =
                 new LinearLayout(this);
@@ -371,27 +390,11 @@ public class MainActivity extends Activity {
                 LinearLayout.VERTICAL
         );
 
-        TextView tokenTitle =
-                text(
-                        "Travelpayouts token",
-                        16,
-                        true
-                );
-
-        tokenTitle.setPadding(
-                0,
-                dp(18),
-                0,
-                dp(5)
-        );
-
-        tokenBlock.addView(tokenTitle);
-
         tokenInput =
                 new EditText(this);
 
-        tokenInput.setTextSize(16);
-        tokenInput.setHint("Вставьте токен");
+        tokenInput.setTextSize(14);
+        tokenInput.setHint("Travelpayouts token");
         tokenInput.setSingleLine(true);
 
         tokenInput.setInputType(
@@ -399,182 +402,175 @@ public class MainActivity extends Activity {
                         | InputType.TYPE_TEXT_VARIATION_PASSWORD
         );
 
-        String savedToken =
+        tokenInput.setText(
                 prefs.getString(
                         TOKEN_KEY,
                         ""
-                );
-
-        tokenInput.setText(savedToken);
+                )
+        );
 
         tokenBlock.addView(
                 tokenInput,
                 new LinearLayout.LayoutParams(
                         LinearLayout.LayoutParams.MATCH_PARENT,
-                        dp(52)
+                        dp(40)
                 )
         );
 
-        root.addView(tokenBlock);
-
-        /*
-         * Компактный блок,
-         * когда токен уже сохранён.
-         */
-        tokenSavedBlock =
-                new LinearLayout(this);
-
-        tokenSavedBlock.setOrientation(
-                LinearLayout.HORIZONTAL
-        );
-
-        tokenSavedBlock.setGravity(
-                Gravity.CENTER_VERTICAL
-        );
-
-        tokenSavedBlock.setPadding(
-                0,
-                dp(13),
-                0,
-                0
-        );
-
-        TextView tokenSavedText =
-                text(
-                        "Travelpayouts подключён",
-                        13,
-                        false
-                );
-
-        tokenSavedText.setTextColor(
-                GREY_TEXT
-        );
-
-        tokenSavedBlock.addView(
-                tokenSavedText,
+        LinearLayout.LayoutParams tokenLp =
                 new LinearLayout.LayoutParams(
-                        0,
-                        LinearLayout.LayoutParams.WRAP_CONTENT,
-                        1
-                )
-        );
-
-        Button changeToken =
-                smallButton(
-                        "Изменить токен"
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        dp(40)
                 );
 
-        changeToken.setOnClickListener(v -> {
+        tokenLp.topMargin = dp(5);
 
-            tokenSavedBlock.setVisibility(
-                    View.GONE
-            );
-
-            tokenBlock.setVisibility(
-                    View.VISIBLE
-            );
-
-            tokenInput.setText(
-                    prefs.getString(
-                            TOKEN_KEY,
-                            ""
-                    )
-            );
-
-            tokenInput.requestFocus();
-        });
-
-        tokenSavedBlock.addView(
-                changeToken
+        root.addView(
+                tokenBlock,
+                tokenLp
         );
 
-        root.addView(tokenSavedBlock);
-
-        if (savedToken.isEmpty()) {
-
-            tokenBlock.setVisibility(
-                    View.VISIBLE
-            );
-
-            tokenSavedBlock.setVisibility(
-                    View.GONE
-            );
-
-        } else {
+        if (!prefs.getString(
+                TOKEN_KEY,
+                ""
+        ).isEmpty()) {
 
             tokenBlock.setVisibility(
                     View.GONE
-            );
-
-            tokenSavedBlock.setVisibility(
-                    View.VISIBLE
             );
         }
 
         /*
-         * ОБНОВИТЬ РАДАР.
+         * Обновить радар.
          */
-        Button scan =
-                actionButton(
-                        "ОБНОВИТЬ РАДАР"
+        Button refreshButton =
+                makeButton(
+                        "ОБНОВИТЬ РАДАР",
+                        15
                 );
 
-        LinearLayout.LayoutParams scanParams =
+        LinearLayout.LayoutParams refreshLp =
                 new LinearLayout.LayoutParams(
                         LinearLayout.LayoutParams.MATCH_PARENT,
-                        dp(62)
+                        dp(46)
                 );
 
-        scanParams.topMargin = dp(15);
+        refreshLp.topMargin = dp(6);
 
         root.addView(
-                scan,
-                scanParams
+                refreshButton,
+                refreshLp
         );
 
-        scan.setOnClickListener(
-                v -> refreshRadar()
+        refreshButton.setOnClickListener(
+                v -> loadRadar()
         );
 
         /*
-         * Проверка непосредственно
-         * на сайте Победы.
+         * Статус.
          */
-        Button pobedaSite =
-                smallButton(
+        resultText =
+                makeText(
+                        "",
+                        14,
+                        true
+                );
+
+        resultText.setGravity(
+                Gravity.CENTER
+        );
+
+        LinearLayout.LayoutParams resultLp =
+                new LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        dp(24)
+                );
+
+        resultLp.topMargin = dp(4);
+
+        root.addView(
+                resultText,
+                resultLp
+        );
+
+        statusText =
+                makeText(
+                        "",
+                        12,
+                        false
+                );
+
+        statusText.setTextColor(GREY);
+        statusText.setGravity(Gravity.CENTER);
+        statusText.setMaxLines(2);
+
+        root.addView(
+                statusText,
+                new LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        dp(34)
+                )
+        );
+
+        /*
+         * Индикатор.
+         */
+        progress =
+                new ProgressBar(this);
+
+        progress.setVisibility(
+                View.GONE
+        );
+
+        LinearLayout.LayoutParams progressLp =
+                new LinearLayout.LayoutParams(
+                        dp(26),
+                        dp(26)
+                );
+
+        progressLp.gravity =
+                Gravity.CENTER_HORIZONTAL;
+
+        root.addView(
+                progress,
+                progressLp
+        );
+
+        /*
+         * Победа.
+         */
+        Button pobedaButton =
+                makeSmallButton(
                         "Проверить на сайте Победы"
                 );
 
-        LinearLayout.LayoutParams siteParams =
+        LinearLayout.LayoutParams pobedaLp =
                 new LinearLayout.LayoutParams(
                         LinearLayout.LayoutParams.WRAP_CONTENT,
-                        dp(44)
+                        dp(38)
                 );
 
-        siteParams.gravity =
+        pobedaLp.gravity =
                 Gravity.CENTER_HORIZONTAL;
 
-        siteParams.topMargin =
-                dp(6);
-
         root.addView(
-                pobedaSite,
-                siteParams
+                pobedaButton,
+                pobedaLp
         );
 
-        pobedaSite.setOnClickListener(v -> {
+        pobedaButton.setOnClickListener(v -> {
 
             try {
 
-                Intent browser =
+                Intent intent =
                         new Intent(
                                 Intent.ACTION_VIEW,
                                 Uri.parse(
-                                        "https://pobeda.aero/"
+                                        "https://www.pobeda.aero/"
                                 )
                         );
 
-                startActivity(browser);
+                startActivity(intent);
 
             } catch (Exception e) {
 
@@ -586,188 +582,194 @@ public class MainActivity extends Activity {
             }
         });
 
-        /*
-         * Индикатор загрузки.
-         */
-        progress =
-                new ProgressBar(this);
-
-        progress.setVisibility(
-                View.GONE
-        );
-
-        LinearLayout.LayoutParams progressParams =
-                new LinearLayout.LayoutParams(
-                        dp(40),
-                        dp(40)
-                );
-
-        progressParams.gravity =
-                Gravity.CENTER_HORIZONTAL;
-
-        progressParams.topMargin =
-                dp(8);
-
-        root.addView(
-                progress,
-                progressParams
-        );
-
-        /*
-         * Результат.
-         */
-        summary =
-                text(
-                        "Выберите направление и диапазон дат.",
-                        17,
-                        true
-                );
-
-        summary.setPadding(
-                0,
-                dp(16),
-                0,
-                dp(6)
-        );
-
-        root.addView(summary);
-
-        status =
-                text(
-                        "",
-                        14,
-                        false
-                );
-
-        status.setTextColor(
-                GREY_TEXT
-        );
-
-        root.addView(status);
-
-        resultsBox =
-                new LinearLayout(this);
-
-        resultsBox.setOrientation(
-                LinearLayout.VERTICAL
-        );
-
-        LinearLayout.LayoutParams resultsParams =
-                new LinearLayout.LayoutParams(
-                        LinearLayout.LayoutParams.MATCH_PARENT,
-                        LinearLayout.LayoutParams.WRAP_CONTENT
-                );
-
-        resultsParams.topMargin =
-                dp(10);
-
-        root.addView(
-                resultsBox,
-                resultsParams
-        );
-
-        setContentView(scroll);
+        setContentView(root);
     }
 
-    private void updateDirectionUi() {
+    private void refreshInterface() {
 
-        styleDirectionButton(
-                outBtn,
+        styleDirection(
+                outButton,
                 outbound
         );
 
-        styleDirectionButton(
-                backBtn,
+        styleDirection(
+                backButton,
                 !outbound
         );
 
-        /*
-         * ВСЕГДА показываем
-         * один и тот же выбранный диапазон.
-         */
-        fromBtn.setText(
-                "С\n"
+        fromButton.setText(
+                "С  "
                         + rangeFrom.format(uiDate)
         );
 
-        toBtn.setText(
-                "ПО\n"
+        toButton.setText(
+                "ПО  "
                         + rangeTo.format(uiDate)
         );
 
-        showEmptyNearestWeek();
+        showBlankWeek();
 
-        summary.setText(
-                "Диапазон: "
-                        + rangeFrom.format(uiDate)
-                        + " — "
-                        + rangeTo.format(uiDate)
+        resultText.setText("");
+
+        statusText.setText(
+                outbound
+                        ? "Москва → Газипаша"
+                        : "Газипаша → Москва"
         );
-
-        status.setText("");
-
-        resultsBox.removeAllViews();
     }
 
-    private void styleDirectionButton(
-            Button button,
-            boolean active
+    /*
+     * ============================================================
+     * БЛИЖАЙШИЕ 7 ДНЕЙ
+     * ============================================================
+     */
+
+    private void showBlankWeek() {
+
+        weekBox.removeAllViews();
+
+        for (int i = 0; i < 7; i++) {
+
+            LocalDate day =
+                    rangeFrom.plusDays(i);
+
+            if (day.isAfter(rangeTo)) {
+
+                addWeekRow(
+                        day,
+                        ""
+                );
+
+            } else {
+
+                addWeekRow(
+                        day,
+                        "—"
+                );
+            }
+        }
+    }
+
+    private void showWeek(
+            List<Offer> offers
     ) {
 
-        GradientDrawable bg =
-                new GradientDrawable();
+        weekBox.removeAllViews();
 
-        bg.setCornerRadius(
-                dp(5)
-        );
+        Map<LocalDate, Integer> best =
+                new LinkedHashMap<>();
 
-        if (active) {
+        for (Offer offer : offers) {
 
-            bg.setColor(
-                    BUTTON_ACTIVE_BG
-            );
+            Integer old =
+                    best.get(offer.date);
 
-            bg.setStroke(
-                    dp(3),
-                    RED
-            );
+            if (old == null
+                    || offer.price < old) {
 
-            button.setTextColor(
-                    Color.rgb(
-                            25,
-                            25,
-                            25
-                    )
-            );
-
-        } else {
-
-            bg.setColor(
-                    BUTTON_BG
-            );
-
-            bg.setStroke(
-                    dp(1),
-                    Color.rgb(
-                            205,
-                            205,
-                            205
-                    )
-            );
-
-            button.setTextColor(
-                    Color.rgb(
-                            55,
-                            55,
-                            55
-                    )
-            );
+                best.put(
+                        offer.date,
+                        offer.price
+                );
+            }
         }
 
-        button.setBackground(bg);
-        button.setEnabled(true);
-        button.setAlpha(1.0f);
+        for (int i = 0; i < 7; i++) {
+
+            LocalDate day =
+                    rangeFrom.plusDays(i);
+
+            if (day.isAfter(rangeTo)) {
+
+                addWeekRow(
+                        day,
+                        ""
+                );
+
+                continue;
+            }
+
+            Integer price =
+                    best.get(day);
+
+            addWeekRow(
+                    day,
+                    price == null
+                            ? "нет данных"
+                            : formatPrice(price)
+            );
+        }
     }
+
+    private void addWeekRow(
+            LocalDate date,
+            String price
+    ) {
+
+        LinearLayout row =
+                new LinearLayout(this);
+
+        row.setOrientation(
+                LinearLayout.HORIZONTAL
+        );
+
+        row.setGravity(
+                Gravity.CENTER_VERTICAL
+        );
+
+        TextView d =
+                makeText(
+                        date.format(weekDate),
+                        13,
+                        false
+                );
+
+        d.setTextColor(GREY);
+
+        TextView p =
+                makeText(
+                        price,
+                        13,
+                        true
+                );
+
+        p.setTextColor(
+                price.equals("нет данных")
+                        ? GREY
+                        : DARK
+        );
+
+        p.setGravity(
+                Gravity.END
+                        | Gravity.CENTER_VERTICAL
+        );
+
+        row.addView(
+                d,
+                new LinearLayout.LayoutParams(
+                        0,
+                        dp(23),
+                        1
+                )
+        );
+
+        row.addView(
+                p,
+                new LinearLayout.LayoutParams(
+                        0,
+                        dp(23),
+                        1
+                )
+        );
+
+        weekBox.addView(row);
+    }
+
+    /*
+     * ============================================================
+     * ВЫБОР ДАТ
+     * ============================================================
+     */
 
     private void pickDate(
             boolean start
@@ -783,7 +785,7 @@ public class MainActivity extends Activity {
                         this,
                         (view, year, month, day) -> {
 
-                            LocalDate chosen =
+                            LocalDate selected =
                                     LocalDate.of(
                                             year,
                                             month + 1,
@@ -793,7 +795,7 @@ public class MainActivity extends Activity {
                             if (start) {
 
                                 rangeFrom =
-                                        chosen;
+                                        selected;
 
                                 if (rangeTo.isBefore(
                                         rangeFrom
@@ -806,7 +808,7 @@ public class MainActivity extends Activity {
                             } else {
 
                                 rangeTo =
-                                        chosen;
+                                        selected;
 
                                 if (rangeTo.isBefore(
                                         rangeFrom
@@ -817,13 +819,8 @@ public class MainActivity extends Activity {
                                 }
                             }
 
-                            /*
-                             * Сохраняем немедленно,
-                             * а не после запроса.
-                             */
                             saveDates();
-
-                            updateDirectionUi();
+                            refreshInterface();
                         },
                         current.getYear(),
                         current.getMonthValue() - 1,
@@ -840,174 +837,29 @@ public class MainActivity extends Activity {
     }
 
     /*
-     * 7 ближайших календарных дат
-     * начиная с начала выбранного диапазона.
+     * ============================================================
+     * ЗАГРУЗКА ЦЕН
+     * ============================================================
      */
-    private void showEmptyNearestWeek() {
 
-        nearestBox.removeAllViews();
+    private void loadRadar() {
 
-        int days =
-                getNearestDaysCount();
-
-        for (int i = 0; i < days; i++) {
-
-            LocalDate date =
-                    rangeFrom.plusDays(i);
-
-            addNearestRow(
-                    date,
-                    "—"
-            );
-        }
-    }
-
-    private int getNearestDaysCount() {
-
-        long totalDays =
-                java.time.temporal.ChronoUnit.DAYS
-                        .between(
-                                rangeFrom,
-                                rangeTo
-                        ) + 1;
-
-        return (int) Math.min(
-                7,
-                Math.max(
-                        1,
-                        totalDays
-                )
-        );
-    }
-
-    private void showNearestWeek(
-            List<Offer> offers
-    ) {
-
-        nearestBox.removeAllViews();
-
-        int days =
-                getNearestDaysCount();
-
-        for (int i = 0; i < days; i++) {
-
-            LocalDate date =
-                    rangeFrom.plusDays(i);
-
-            Integer bestPrice =
-                    null;
-
-            for (Offer offer : offers) {
-
-                if (offer.date.equals(date)) {
-
-                    if (bestPrice == null
-                            || offer.price < bestPrice) {
-
-                        bestPrice =
-                                offer.price;
-                    }
-                }
-            }
-
-            addNearestRow(
-                    date,
-                    bestPrice == null
-                            ? "нет данных"
-                            : rub(bestPrice)
-            );
-        }
-    }
-
-    private void addNearestRow(
-            LocalDate date,
-            String price
-    ) {
-
-        LinearLayout row =
-                new LinearLayout(this);
-
-        row.setOrientation(
-                LinearLayout.HORIZONTAL
-        );
-
-        row.setGravity(
-                Gravity.CENTER_VERTICAL
-        );
-
-        TextView dateText =
-                text(
-                        date.format(shortDate),
-                        14,
-                        false
-                );
-
-        dateText.setTextColor(
-                GREY_TEXT
-        );
-
-        TextView priceText =
-                text(
-                        price,
-                        14,
-                        true
-                );
-
-        priceText.setTextColor(
-                GREY_TEXT
-        );
-
-        priceText.setGravity(
-                Gravity.END
-                        | Gravity.CENTER_VERTICAL
-        );
-
-        row.addView(
-                dateText,
-                new LinearLayout.LayoutParams(
-                        0,
-                        dp(25),
-                        1
-                )
-        );
-
-        row.addView(
-                priceText,
-                new LinearLayout.LayoutParams(
-                        0,
-                        dp(25),
-                        1
-                )
-        );
-
-        nearestBox.addView(row);
-    }
-
-    private void refreshRadar() {
-
-        String token =
+        String savedToken =
                 prefs.getString(
                         TOKEN_KEY,
                         ""
                 );
 
-        /*
-         * Если пользователь открыл
-         * "Изменить токен",
-         * используем новое значение.
-         */
-        if (tokenBlock.getVisibility()
-                == View.VISIBLE) {
+        String token =
+                savedToken;
 
-            String typedToken =
+        if (token.isEmpty()) {
+
+            token =
                     tokenInput
                             .getText()
                             .toString()
                             .trim();
-
-            if (!typedToken.isEmpty()) {
-                token = typedToken;
-            }
         }
 
         if (token.isEmpty()) {
@@ -1022,58 +874,44 @@ public class MainActivity extends Activity {
                     View.VISIBLE
             );
 
-            tokenSavedBlock.setVisibility(
-                    View.GONE
-            );
-
             return;
         }
 
         final String finalToken =
                 token;
 
-        /*
-         * Ещё раз сохраняем выбранные даты
-         * перед запросом.
-         */
-        saveDates();
-
-        String origin =
+        final String origin =
                 outbound
                         ? "MOW"
                         : "GZP";
 
-        String destination =
+        final String destination =
                 outbound
                         ? "GZP"
                         : "MOW";
+
+        saveDates();
 
         progress.setVisibility(
                 View.VISIBLE
         );
 
-        summary.setText(
-                "Проверяю цены…"
+        resultText.setText(
+                "Ищу цены Победы…"
         );
 
-        status.setText(
-                origin
-                        + " → "
-                        + destination
-                        + " · "
-                        + rangeFrom.format(uiDate)
+        statusText.setText(
+                rangeFrom.format(uiDate)
                         + " — "
                         + rangeTo.format(uiDate)
         );
-
-        resultsBox.removeAllViews();
 
         new Thread(() -> {
 
             try {
 
                 List<Offer> offers =
-                        loadOffers(
+                        requestEntireRange(
                                 origin,
                                 destination,
                                 rangeFrom,
@@ -1083,10 +921,10 @@ public class MainActivity extends Activity {
 
                 runOnUiThread(() -> {
 
-                    /*
-                     * Успешный запрос —
-                     * сохраняем токен.
-                     */
+                    progress.setVisibility(
+                            View.GONE
+                    );
+
                     prefs.edit()
                             .putString(
                                     TOKEN_KEY,
@@ -1094,25 +932,46 @@ public class MainActivity extends Activity {
                             )
                             .apply();
 
-                    tokenInput.setText(
-                            finalToken
-                    );
-
                     tokenBlock.setVisibility(
                             View.GONE
                     );
 
-                    tokenSavedBlock.setVisibility(
-                            View.VISIBLE
-                    );
+                    showWeek(offers);
 
-                    showOffers(
-                            offers,
-                            origin,
-                            destination,
-                            rangeFrom,
-                            rangeTo
-                    );
+                    if (offers.isEmpty()) {
+
+                        resultText.setText(
+                                "Цены Победы не найдены"
+                        );
+
+                        statusText.setText(
+                                "Рейсы могут быть — в API сейчас нет цены DP"
+                        );
+
+                    } else {
+
+                        int min =
+                                Integer.MAX_VALUE;
+
+                        for (Offer offer : offers) {
+
+                            min =
+                                    Math.min(
+                                            min,
+                                            offer.price
+                                    );
+                        }
+
+                        resultText.setText(
+                                "Минимум "
+                                        + formatPrice(min)
+                        );
+
+                        statusText.setText(
+                                "Найдено цен DP: "
+                                        + offers.size()
+                        );
+                    }
                 });
 
             } catch (Exception e) {
@@ -1123,36 +982,31 @@ public class MainActivity extends Activity {
                             View.GONE
                     );
 
-                    summary.setText(
-                            "Не удалось обновить радар"
+                    resultText.setText(
+                            "Ошибка обновления"
                     );
 
-                    status.setText(
+                    statusText.setText(
                             e.getMessage() == null
                                     ? e.toString()
                                     : e.getMessage()
                     );
-
-                    if (prefs.getString(
-                            TOKEN_KEY,
-                            ""
-                    ).isEmpty()) {
-
-                        tokenBlock.setVisibility(
-                                View.VISIBLE
-                        );
-
-                        tokenSavedBlock.setVisibility(
-                                View.GONE
-                        );
-                    }
                 });
             }
 
         }).start();
     }
 
-    private List<Offer> loadOffers(
+    /*
+     * Делим выбранный диапазон на месяцы.
+     *
+     * Например:
+     * 25.09 — 10.10
+     *
+     * = отдельный запрос за сентябрь
+     * + отдельный запрос за октябрь.
+     */
+    private List<Offer> requestEntireRange(
             String origin,
             String destination,
             LocalDate from,
@@ -1160,98 +1014,128 @@ public class MainActivity extends Activity {
             String token
     ) throws Exception {
 
-        String requestUrl =
-                "https://api.travelpayouts.com/aviasales/v3/get_special_offers"
+        List<Offer> result =
+                new ArrayList<>();
+
+        YearMonth month =
+                YearMonth.from(from);
+
+        YearMonth lastMonth =
+                YearMonth.from(to);
+
+        while (!month.isAfter(lastMonth)) {
+
+            result.addAll(
+                    requestMonth(
+                            origin,
+                            destination,
+                            month,
+                            from,
+                            to,
+                            token
+                    )
+            );
+
+            month =
+                    month.plusMonths(1);
+        }
+
+        /*
+         * Удаляем дубли:
+         * одна дата + один номер рейса + одна цена.
+         */
+        Map<String, Offer> unique =
+                new LinkedHashMap<>();
+
+        for (Offer offer : result) {
+
+            String key =
+                    offer.date
+                            + "|"
+                            + offer.flight
+                            + "|"
+                            + offer.price;
+
+            unique.put(
+                    key,
+                    offer
+            );
+        }
+
+        result =
+                new ArrayList<>(
+                        unique.values()
+                );
+
+        result.sort(
+                Comparator
+                        .comparing(
+                                (Offer o) ->
+                                        o.date
+                        )
+                        .thenComparingInt(
+                                o ->
+                                        o.price
+                        )
+        );
+
+        return result;
+    }
+
+    /*
+     * Основной запрос:
+     *
+     * /aviasales/v3/prices_for_dates
+     *
+     * Берём много результатов за конкретный месяц,
+     * потом уже сами оставляем только DP.
+     */
+    private List<Offer> requestMonth(
+            String origin,
+            String destination,
+            YearMonth month,
+            LocalDate from,
+            LocalDate to,
+            String token
+    ) throws Exception {
+
+        String url =
+                "https://api.travelpayouts.com"
+                        + "/aviasales/v3/prices_for_dates"
                         + "?origin="
-                        + enc(origin)
+                        + encode(origin)
                         + "&destination="
-                        + enc(destination)
-                        + "&airline=DP"
-                        + "&locale=ru"
+                        + encode(destination)
+                        + "&departure_at="
+                        + encode(
+                                month.format(
+                                        monthParam
+                                )
+                        )
+                        + "&one_way=true"
+                        + "&direct=true"
+                        + "&unique=false"
+                        + "&sorting=price"
                         + "&currency=rub"
                         + "&market=ru"
+                        + "&limit=1000"
+                        + "&page=1"
                         + "&token="
-                        + enc(token);
-
-        HttpURLConnection connection =
-                (HttpURLConnection)
-                        new URL(
-                                requestUrl
-                        ).openConnection();
-
-        connection.setConnectTimeout(
-                15000
-        );
-
-        connection.setReadTimeout(
-                20000
-        );
-
-        connection.setRequestMethod(
-                "GET"
-        );
-
-        connection.setRequestProperty(
-                "Accept",
-                "application/json"
-        );
-
-        connection.setRequestProperty(
-                "User-Agent",
-                "PobedaRadar/1.3"
-        );
-
-        int code =
-                connection.getResponseCode();
-
-        InputStream stream =
-                code >= 200
-                        && code < 300
-                        ? connection.getInputStream()
-                        : connection.getErrorStream();
-
-        String body =
-                readAll(stream);
-
-        connection.disconnect();
-
-        if (code == 401
-                || code == 403) {
-
-            throw new Exception(
-                    "Travelpayouts отклонил токен"
-            );
-        }
-
-        if (code == 429) {
-
-            throw new Exception(
-                    "Слишком много запросов. Повторите позже."
-            );
-        }
-
-        if (code < 200
-                || code >= 300) {
-
-            throw new Exception(
-                    "Travelpayouts HTTP "
-                            + code
-            );
-        }
+                        + encode(token);
 
         JSONObject json =
-                new JSONObject(body);
+                getJson(url);
 
         JSONArray data =
                 json.optJSONArray(
                         "data"
                 );
 
-        List<Offer> offers =
+        List<Offer> result =
                 new ArrayList<>();
 
         if (data == null) {
-            return offers;
+            return result;
         }
 
         for (int i = 0;
@@ -1265,6 +1149,9 @@ public class MainActivity extends Activity {
                 continue;
             }
 
+            /*
+             * Нас интересует только Победа.
+             */
             String airline =
                     item.optString(
                             "airline",
@@ -1274,19 +1161,37 @@ public class MainActivity extends Activity {
             if (!"DP".equalsIgnoreCase(
                     airline
             )) {
+
+                continue;
+            }
+
+            /*
+             * На всякий случай ещё фильтруем
+             * прямой перелёт.
+             */
+            int transfers =
+                    item.optInt(
+                            "transfers",
+                            0
+                    );
+
+            if (transfers != 0) {
                 continue;
             }
 
             LocalDate date =
-                    parseDate(
+                    parseDepartureDate(
                             item.optString(
                                     "departure_at",
                                     ""
                             )
                     );
 
-            if (date == null
-                    || date.isBefore(from)
+            if (date == null) {
+                continue;
+            }
+
+            if (date.isBefore(from)
                     || date.isAfter(to)) {
 
                 continue;
@@ -1302,335 +1207,126 @@ public class MainActivity extends Activity {
                 continue;
             }
 
-            offers.add(
+            String flight =
+                    item.optString(
+                            "flight_number",
+                            ""
+                    );
+
+            String link =
+                    item.optString(
+                            "link",
+                            ""
+                    );
+
+            result.add(
                     new Offer(
                             date,
                             price,
-                            item.optString(
-                                    "flight_number",
-                                    ""
-                            ),
-                            item.optString(
-                                    "link",
-                                    ""
-                            )
+                            flight,
+                            link
                     )
             );
         }
 
-        offers.sort(
-                Comparator
-                        .comparing(
-                                (Offer o) ->
-                                        o.date
-                        )
-                        .thenComparingInt(
-                                o ->
-                                        o.price
-                        )
-        );
-
-        return offers;
+        return result;
     }
 
-    private void showOffers(
-            List<Offer> offers,
-            String origin,
-            String destination,
-            LocalDate from,
-            LocalDate to
-    ) {
+    /*
+     * ============================================================
+     * HTTP
+     * ============================================================
+     */
 
-        progress.setVisibility(
-                View.GONE
+    private JSONObject getJson(
+            String urlString
+    ) throws Exception {
+
+        HttpURLConnection connection =
+                (HttpURLConnection)
+                        new URL(
+                                urlString
+                        ).openConnection();
+
+        connection.setRequestMethod(
+                "GET"
         );
 
-        showNearestWeek(
-                offers
+        connection.setConnectTimeout(
+                15000
         );
 
-        resultsBox.removeAllViews();
-
-        if (offers.isEmpty()) {
-
-            summary.setText(
-                    "Ценовых данных пока нет"
-            );
-
-            status.setText(
-                    "Это не означает отсутствие рейсов Победы. "
-                            + "Travelpayouts не всегда содержит цену "
-                            + "по каждой существующей дате."
-            );
-
-            return;
-        }
-
-        int min =
-                Integer.MAX_VALUE;
-
-        long total = 0;
-
-        for (Offer offer : offers) {
-
-            min =
-                    Math.min(
-                            min,
-                            offer.price
-                    );
-
-            total +=
-                    offer.price;
-        }
-
-        int avg =
-                (int)
-                        Math.round(
-                                total
-                                        / (double)
-                                        offers.size()
-                        );
-
-        summary.setText(
-                "Найдено: "
-                        + offers.size()
-                        + " · минимум "
-                        + rub(min)
-                        + " · средняя "
-                        + rub(avg)
+        connection.setReadTimeout(
+                25000
         );
 
-        status.setText(
-                origin
-                        + " → "
-                        + destination
-                        + " · "
-                        + from.format(uiDate)
-                        + " — "
-                        + to.format(uiDate)
+        connection.setRequestProperty(
+                "Accept",
+                "application/json"
         );
 
-        for (Offer offer : offers) {
-
-            addOfferCard(
-                    offer,
-                    avg,
-                    offers.size()
-            );
-        }
-    }
-
-    private void addOfferCard(
-            Offer offer,
-            int avg,
-            int count
-    ) {
-
-        LinearLayout card =
-                new LinearLayout(this);
-
-        card.setOrientation(
-                LinearLayout.VERTICAL
+        connection.setRequestProperty(
+                "User-Agent",
+                "PobedaRadar/2.0"
         );
 
-        card.setPadding(
-                dp(15),
-                dp(14),
-                dp(15),
-                dp(14)
-        );
+        int code =
+                connection.getResponseCode();
 
-        GradientDrawable bg =
-                new GradientDrawable();
+        InputStream stream =
+                code >= 200
+                        && code < 300
+                        ? connection.getInputStream()
+                        : connection.getErrorStream();
 
-        bg.setColor(
-                Color.rgb(
-                        247,
-                        247,
-                        247
-                )
-        );
+        String response =
+                readStream(stream);
 
-        bg.setCornerRadius(
-                dp(5)
-        );
+        connection.disconnect();
 
-        card.setBackground(bg);
+        if (code == 401
+                || code == 403) {
 
-        TextView main =
-                text(
-                        offer.date.format(uiDate)
-                                + "   "
-                                + rub(offer.price),
-                        21,
-                        true
-                );
-
-        card.addView(main);
-
-        String flightText =
-                offer.flight == null
-                        || offer.flight.isEmpty()
-                        ? "DP"
-                        : offer.flight.toUpperCase()
-                        .startsWith("DP")
-                        ? offer.flight
-                        : "DP" + offer.flight;
-
-        TextView info =
-                text(
-                        priceRating(
-                                offer.price,
-                                avg,
-                                count
-                        )
-                                + " · "
-                                + flightText,
-                        14,
-                        false
-                );
-
-        info.setTextColor(
-                GREY_TEXT
-        );
-
-        info.setPadding(
-                0,
-                dp(6),
-                0,
-                0
-        );
-
-        card.addView(info);
-
-        if (offer.link != null
-                && !offer.link.isEmpty()) {
-
-            card.setClickable(true);
-            card.setFocusable(true);
-
-            card.setOnClickListener(
-                    v -> openOffer(
-                            offer.link
-                    )
+            throw new Exception(
+                    "Travelpayouts отклонил токен"
             );
         }
 
-        LinearLayout.LayoutParams params =
-                new LinearLayout.LayoutParams(
-                        LinearLayout.LayoutParams.MATCH_PARENT,
-                        LinearLayout.LayoutParams.WRAP_CONTENT
+        if (code == 429) {
+
+            throw new Exception(
+                    "Слишком много запросов. Повтори позже."
+            );
+        }
+
+        if (code < 200
+                || code >= 300) {
+
+            throw new Exception(
+                    "Travelpayouts HTTP "
+                            + code
+            );
+        }
+
+        JSONObject json =
+                new JSONObject(
+                        response
                 );
 
-        params.bottomMargin =
-                dp(8);
+        if (!json.optBoolean(
+                "success",
+                true
+        )) {
 
-        resultsBox.addView(
-                card,
-                params
-        );
+            throw new Exception(
+                    "Travelpayouts вернул ошибку"
+            );
+        }
+
+        return json;
     }
 
-    private void openOffer(
-            String link
-    ) {
-
-        try {
-
-            String fullLink =
-                    link.startsWith("http://")
-                            || link.startsWith("https://")
-                            ? link
-                            : "https://www.aviasales.ru"
-                            + (link.startsWith("/")
-                            ? link
-                            : "/" + link);
-
-            Intent browser =
-                    new Intent(
-                            Intent.ACTION_VIEW,
-                            Uri.parse(fullLink)
-                    );
-
-            startActivity(browser);
-
-        } catch (Exception e) {
-
-            Toast.makeText(
-                    this,
-                    "Не удалось открыть предложение",
-                    Toast.LENGTH_SHORT
-            ).show();
-        }
-    }
-
-    private String priceRating(
-            int price,
-            int avg,
-            int count
-    ) {
-
-        if (count < 3) {
-            return "цена найдена";
-        }
-
-        double ratio =
-                price
-                        / (double) avg;
-
-        if (ratio <= 0.75) {
-            return "очень низкая";
-        }
-
-        if (ratio <= 0.90) {
-            return "низкая";
-        }
-
-        if (ratio <= 1.10) {
-            return "обычная";
-        }
-
-        return "высокая";
-    }
-
-    private LocalDate parseDate(
-            String value
-    ) {
-
-        if (value == null
-                || value.isEmpty()) {
-
-            return null;
-        }
-
-        try {
-
-            return OffsetDateTime
-                    .parse(value)
-                    .toLocalDate();
-
-        } catch (Exception ignored) {
-        }
-
-        try {
-
-            if (value.length() >= 10) {
-
-                return LocalDate.parse(
-                        value.substring(
-                                0,
-                                10
-                        )
-                );
-            }
-
-        } catch (Exception ignored) {
-        }
-
-        return null;
-    }
-
-    private String readAll(
+    private String readStream(
             InputStream stream
     ) throws Exception {
 
@@ -1646,7 +1342,7 @@ public class MainActivity extends Activity {
                         )
                 );
 
-        StringBuilder result =
+        StringBuilder builder =
                 new StringBuilder();
 
         String line;
@@ -1655,25 +1351,109 @@ public class MainActivity extends Activity {
                 reader.readLine())
                 != null) {
 
-            result.append(line);
+            builder.append(line);
         }
 
         reader.close();
 
-        return result.toString();
+        return builder.toString();
     }
 
-    private String enc(
-            String value
-    ) throws Exception {
+    /*
+     * ============================================================
+     * UTIL
+     * ============================================================
+     */
 
-        return URLEncoder.encode(
-                value,
-                "UTF-8"
+    private LocalDate parseDepartureDate(
+            String value
+    ) {
+
+        if (value == null
+                || value.length() < 10) {
+
+            return null;
+        }
+
+        try {
+
+            return OffsetDateTime
+                    .parse(value)
+                    .toLocalDate();
+
+        } catch (Exception ignored) {
+        }
+
+        try {
+
+            return LocalDate.parse(
+                    value.substring(
+                            0,
+                            10
+                    )
+            );
+
+        } catch (Exception ignored) {
+        }
+
+        return null;
+    }
+
+    private void styleDirection(
+            Button button,
+            boolean selected
+    ) {
+
+        GradientDrawable background =
+                new GradientDrawable();
+
+        background.setCornerRadius(
+                dp(5)
+        );
+
+        background.setColor(
+                selected
+                        ? Color.WHITE
+                        : LIGHT_GREY
+        );
+
+        if (selected) {
+
+            background.setStroke(
+                    dp(3),
+                    RED
+            );
+
+        } else {
+
+            background.setStroke(
+                    dp(1),
+                    Color.rgb(
+                            205,
+                            205,
+                            205
+                    )
+            );
+        }
+
+        button.setBackground(
+                background
+        );
+
+        button.setTextColor(
+                DARK
+        );
+
+        button.setAlpha(
+                1.0f
+        );
+
+        button.setEnabled(
+                true
         );
     }
 
-    private TextView text(
+    private TextView makeText(
             String value,
             int size,
             boolean bold
@@ -1684,13 +1464,9 @@ public class MainActivity extends Activity {
 
         view.setText(value);
         view.setTextSize(size);
-
-        view.setTextColor(
-                Color.rgb(
-                        32,
-                        32,
-                        32
-                )
+        view.setTextColor(DARK);
+        view.setGravity(
+                Gravity.CENTER_VERTICAL
         );
 
         if (bold) {
@@ -1704,26 +1480,37 @@ public class MainActivity extends Activity {
         return view;
     }
 
-    private Button actionButton(
-            String value
+    private Button makeButton(
+            String value,
+            int size
     ) {
 
         Button button =
                 new Button(this);
 
         button.setText(value);
-        button.setTextSize(15);
-        button.setAllCaps(false);
+        button.setTextSize(size);
+
+        button.setAllCaps(
+                false
+        );
 
         button.setTypeface(
                 Typeface.DEFAULT,
                 Typeface.BOLD
         );
 
+        button.setPadding(
+                dp(4),
+                0,
+                dp(4),
+                0
+        );
+
         return button;
     }
 
-    private Button smallButton(
+    private Button makeSmallButton(
             String value
     ) {
 
@@ -1731,13 +1518,26 @@ public class MainActivity extends Activity {
                 new Button(this);
 
         button.setText(value);
-        button.setTextSize(13);
-        button.setAllCaps(false);
+
+        button.setTextSize(
+                12
+        );
+
+        button.setAllCaps(
+                false
+        );
+
+        button.setPadding(
+                dp(12),
+                0,
+                dp(12),
+                0
+        );
 
         return button;
     }
 
-    private String rub(
+    private String formatPrice(
             int value
     ) {
 
@@ -1750,6 +1550,16 @@ public class MainActivity extends Activity {
                         ',',
                         ' '
                 );
+    }
+
+    private String encode(
+            String value
+    ) throws Exception {
+
+        return URLEncoder.encode(
+                value,
+                "UTF-8"
+        );
     }
 
     private int dp(
