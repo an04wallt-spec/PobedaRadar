@@ -6,6 +6,15 @@ android {
     namespace 'ru.pobedaradar.app'
     compileSdk 35
 
+    signingConfigs {
+        permanent {
+            storeFile file("${rootProject.projectDir}/pobedaradar-fixed.jks")
+            storePassword "PobedaRadar_2026_fixed"
+            keyAlias "pobedaradar"
+            keyPassword "PobedaRadar_2026_fixed"
+        }
+    }
+
     defaultConfig {
         applicationId "ru.pobedaradar.app"
         minSdk 26
@@ -13,6 +22,13 @@ android {
 
         versionCode 12
         versionName "0.12"
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.permanent
+        }
     }
 }
 
