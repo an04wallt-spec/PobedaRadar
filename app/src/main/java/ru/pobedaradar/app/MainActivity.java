@@ -58,7 +58,7 @@ import java.util.concurrent.TimeUnit;
 
 public class MainActivity extends Activity {
 
-    private static final String APP_VERSION = "v0.10";
+    private static final String APP_VERSION = "v0.11";
 
     private static final String PREFS = "pobeda_radar";
 
@@ -284,22 +284,12 @@ public class MainActivity extends Activity {
                 LinearLayout.VERTICAL
         );
 
-        /*
-         * ScrollView по-прежнему отсутствует.
-         * Высоты элементов специально ужаты,
-         * чтобы список ближайших дат и 14 лучших предложений
-         * помещались на экране.
-         */
         root.setPadding(
                 dp(16),
                 dp(38),
                 dp(16),
                 dp(4)
         );
-
-        // --------------------------------------------------------
-        // Заголовок
-        // --------------------------------------------------------
 
         TextView title =
                 makeText(
@@ -319,10 +309,6 @@ public class MainActivity extends Activity {
                         dp(25)
                 )
         );
-
-        // --------------------------------------------------------
-        // Направления
-        // --------------------------------------------------------
 
         LinearLayout directionRow =
                 new LinearLayout(this);
@@ -407,10 +393,6 @@ public class MainActivity extends Activity {
             refreshInterface();
         });
 
-        // --------------------------------------------------------
-        // БЛИЖАЙШИЕ ДАТЫ
-        // --------------------------------------------------------
-
         TextView weekTitle =
                 makeText(
                         "Ближайшие даты",
@@ -448,10 +430,6 @@ public class MainActivity extends Activity {
                 )
         );
 
-        // --------------------------------------------------------
-        // НАИЛУЧШИЕ ПРЕДЛОЖЕНИЯ
-        // --------------------------------------------------------
-
         TextView bestTitle =
                 makeText(
                         "Наилучшие предложения",
@@ -488,10 +466,6 @@ public class MainActivity extends Activity {
                         dp(252)
                 )
         );
-
-        // --------------------------------------------------------
-        // Диапазон
-        // --------------------------------------------------------
 
         TextView datesCaption =
                 makeText(
@@ -585,10 +559,6 @@ public class MainActivity extends Activity {
             }
         });
 
-        // --------------------------------------------------------
-        // TOKEN
-        // --------------------------------------------------------
-
         tokenBlock =
                 new LinearLayout(this);
 
@@ -649,10 +619,6 @@ public class MainActivity extends Activity {
             );
         }
 
-        // --------------------------------------------------------
-        // Обновить
-        // --------------------------------------------------------
-
         refreshButton =
                 makeButton(
                         "ОБНОВИТЬ РАДАР",
@@ -675,10 +641,6 @@ public class MainActivity extends Activity {
         refreshButton.setOnClickListener(
                 v -> loadRadar()
         );
-
-        // --------------------------------------------------------
-        // Минимум
-        // --------------------------------------------------------
 
         resultText =
                 makeText(
@@ -704,10 +666,6 @@ public class MainActivity extends Activity {
                 resultLp
         );
 
-        // --------------------------------------------------------
-        // Статус
-        // --------------------------------------------------------
-
         statusText =
                 makeText(
                         "",
@@ -726,10 +684,6 @@ public class MainActivity extends Activity {
                         dp(22)
                 )
         );
-
-        // --------------------------------------------------------
-        // Прогресс
-        // --------------------------------------------------------
 
         progress =
                 new ProgressBar(this);
@@ -751,10 +705,6 @@ public class MainActivity extends Activity {
                 progress,
                 progressLp
         );
-
-        // --------------------------------------------------------
-        // Нижняя строка
-        // --------------------------------------------------------
 
         LinearLayout bottomRow =
                 new LinearLayout(this);
@@ -874,16 +824,7 @@ public class MainActivity extends Activity {
                 )
         );
 
-        /*
-         * Показываем сохранённую
-         * ближайшую неделю.
-         */
         showStoredWeek();
-
-        /*
-         * Показываем четырнадцать лучших
-         * сохранённых цен по ВСЕМУ диапазону.
-         */
         showStoredBestOffers();
 
         resultText.setText("");
@@ -996,13 +937,6 @@ public class MainActivity extends Activity {
             boolean historyOutbound
     ) {
 
-        /*
-         * Сначала сохраняем цены
-         * ПО ВСЕМУ выбранному диапазону.
-         *
-         * Это нужно и для истории,
-         * и для блока лучших предложений.
-         */
         saveAllCurrentPrices(
                 offers,
                 historyOutbound
@@ -1157,10 +1091,6 @@ public class MainActivity extends Activity {
             );
         }
 
-        /*
-         * И сразу перерисовываем
-         * четырнадцать лучших предложений.
-         */
         showBestOffers(
                 offers
         );
@@ -1169,6 +1099,25 @@ public class MainActivity extends Activity {
     // ============================================================
     // НАИЛУЧШИЕ ПРЕДЛОЖЕНИЯ
     // ============================================================
+
+    private boolean isShownInNearestDates(
+            LocalDate date
+    ) {
+
+        if (date == null) {
+            return false;
+        }
+
+        LocalDate lastNearestDate =
+                rangeFrom.plusDays(6);
+
+        if (lastNearestDate.isAfter(rangeTo)) {
+            lastNearestDate = rangeTo;
+        }
+
+        return !date.isBefore(rangeFrom)
+                && !date.isAfter(lastNearestDate);
+    }
 
     private void showBestOffers(
             List<Offer> offers
@@ -1190,6 +1139,12 @@ public class MainActivity extends Activity {
             if (entry.getKey().isBefore(rangeFrom)
                     || entry.getKey().isAfter(rangeTo)) {
 
+                continue;
+            }
+
+            if (isShownInNearestDates(
+                    entry.getKey()
+            )) {
                 continue;
             }
 
@@ -1225,6 +1180,14 @@ public class MainActivity extends Activity {
                 rangeFrom;
 
         while (!day.isAfter(rangeTo)) {
+
+            if (isShownInNearestDates(day)) {
+
+                day =
+                        day.plusDays(1);
+
+                continue;
+            }
 
             int price =
                     getStoredLastPrice(
@@ -1317,11 +1280,6 @@ public class MainActivity extends Activity {
             );
         }
 
-        /*
-         * Чтобы список всегда занимал
-         * одинаковую высоту — добиваем
-         * недостающие строки пустыми.
-         */
         for (int i = rows; i < 14; i++) {
 
             addEmptyBestRow();
@@ -1360,10 +1318,6 @@ public class MainActivity extends Activity {
                 row
         );
     }
-
-    // ============================================================
-    // ОБЩАЯ СТРОКА ДЛЯ ОБОИХ СПИСКОВ
-    // ============================================================
 
     private void addPriceRow(
             LinearLayout parent,
@@ -1584,13 +1538,6 @@ public class MainActivity extends Activity {
             Integer currentPrice
     ) {
 
-        /*
-         * На момент вызова новая цена уже
-         * могла быть сохранена saveAllCurrentPrices().
-         *
-         * Поэтому для визуального сравнения
-         * используем временный ключ PREV.
-         */
         return prefs.getInt(
                 "prev_"
                         + lastPriceKey(
@@ -1626,11 +1573,6 @@ public class MainActivity extends Activity {
                             isOutbound
                     );
 
-            /*
-             * Сохраняем предыдущую цену отдельно,
-             * чтобы после записи новой цены
-             * всё ещё можно было показать ↑/↓/=.
-             */
             if (oldPrice > 0) {
 
                 prefs.edit()
@@ -2156,10 +2098,6 @@ public class MainActivity extends Activity {
         return prices;
     }
 
-    // ============================================================
-    // API — РАБОЧУЮ ЧАСТЬ НЕ МЕНЯЕМ
-    // ============================================================
-
     private List<Offer> requestEntireRange(
             String origin,
             String destination,
@@ -2388,7 +2326,7 @@ public class MainActivity extends Activity {
 
         connection.setRequestProperty(
                 "User-Agent",
-                "PobedaRadar/0.10"
+                "PobedaRadar/0.11"
         );
 
         int code =
@@ -2448,10 +2386,6 @@ public class MainActivity extends Activity {
 
         return json;
     }
-
-    // ============================================================
-    // UTIL
-    // ============================================================
 
     private String formatTime(
             long millis
@@ -2737,10 +2671,6 @@ public class MainActivity extends Activity {
                         + 0.5f
         );
     }
-
-    // ============================================================
-    // DATA
-    // ============================================================
 
     private static class Offer {
 
