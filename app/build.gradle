@@ -9,9 +9,9 @@ android {
     signingConfigs {
         permanent {
             storeFile file("${rootProject.projectDir}/pobedaradar-release.jks")
-            storePassword "7Gx85jjmD5GbdDcDM4WQBHHe_#uT"
+            storePassword "QvGmYcO-h8mbhCB%aNAzXQm6XKED"
             keyAlias "pobedaradar"
-            keyPassword "7Gx85jjmD5GbdDcDM4WQBHHe_#uT"
+            keyPassword "QvGmYcO-h8mbhCB%aNAzXQm6XKED"
         }
     }
 
@@ -19,6 +19,7 @@ android {
         applicationId "ru.pobedaradar.app"
         minSdk 26
         targetSdk 35
+
         versionCode 12
         versionName "0.12"
     }
