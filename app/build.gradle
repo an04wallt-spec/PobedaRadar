@@ -8,10 +8,10 @@ android {
 
     signingConfigs {
         permanent {
-            storeFile file("${rootProject.projectDir}/pobedaradar-fixed.jks")
-            storePassword "PobedaRadar_2026_fixed"
+            storeFile file("${rootProject.projectDir}/pobedaradar-release.jks")
+            storePassword "7Gx85jjmD5GbdDcDM4WQBHHe_#uT"
             keyAlias "pobedaradar"
-            keyPassword "PobedaRadar_2026_fixed"
+            keyPassword "7Gx85jjmD5GbdDcDM4WQBHHe_#uT"
         }
     }
 
@@ -19,7 +19,6 @@ android {
         applicationId "ru.pobedaradar.app"
         minSdk 26
         targetSdk 35
-
         versionCode 12
         versionName "0.12"
     }
