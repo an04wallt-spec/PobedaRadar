@@ -9,9 +9,9 @@ android {
     signingConfigs {
         permanent {
             storeFile file("${rootProject.projectDir}/pobedaradar-release.jks")
-            storePassword "QvGmYcO-h8mbhCB%aNAzXQm6XKED"
+            storePassword "OzK5!uQAqG37aeBEl8wg4yWxXrqF"
             keyAlias "pobedaradar"
-            keyPassword "QvGmYcO-h8mbhCB%aNAzXQm6XKED"
+            keyPassword "OzK5!uQAqG37aeBEl8wg4yWxXrqF"
         }
     }
 
