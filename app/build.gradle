@@ -6,33 +6,13 @@ android {
     namespace 'ru.pobedaradar.app'
     compileSdk 35
 
-    signingConfigs {
-        release {
-            def ksPath = System.getenv("ANDROID_KEYSTORE_PATH")
-
-            if (ksPath != null && !ksPath.isEmpty()) {
-                storeFile file(ksPath)
-                storePassword System.getenv("ANDROID_KEYSTORE_PASSWORD")
-                keyAlias System.getenv("ANDROID_KEY_ALIAS")
-                keyPassword System.getenv("ANDROID_KEY_PASSWORD")
-            }
-        }
-    }
-
     defaultConfig {
         applicationId "ru.pobedaradar.app"
         minSdk 26
         targetSdk 35
 
-        versionCode 10
-        versionName "0.10"
-    }
-
-    buildTypes {
-        release {
-            minifyEnabled false
-            signingConfig signingConfigs.release
-        }
+        versionCode 11
+        versionName "0.11"
     }
 }
 
