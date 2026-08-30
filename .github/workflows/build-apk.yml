@@ -26,30 +26,21 @@ jobs:
         with:
           gradle-version: '8.9'
 
-      - name: Restore signing keystore
-        env:
-          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+      # Один и тот же ключ подписи сохраняется между сборками
+      - name: Restore signing key
+        uses: actions/cache@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: pobedaradar-permanent-debug-key-v1
+
+      - name: Build APK
+        run: gradle assembleDebug
+
+      - name: Prepare APK
         run: |
-          if [ -z "$KEYSTORE_BASE64" ]; then
-            echo "ANDROID_KEYSTORE_BASE64 secret is missing"
-            exit 1
-          fi
+          cp app/build/outputs/apk/debug/app-debug.apk PobedaRadar-v0.10.apk
 
-          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/pobedaradar-release.jks"
-
-      - name: Build signed release APK
-        env:
-          ANDROID_KEYSTORE_PATH: ${{ runner.temp }}/pobedaradar-release.jks
-          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-        run: gradle assembleRelease
-
-      - name: Prepare PobedaRadar APK
-        run: |
-          cp app/build/outputs/apk/release/app-release.apk PobedaRadar-v0.10.apk
-
-      - name: Upload PobedaRadar APK
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: PobedaRadar-v0.10
