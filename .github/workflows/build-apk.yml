@@ -26,6 +26,17 @@ jobs:
         with:
           gradle-version: '8.9'
 
-      - name: Create permanent signing key
+      - name: Build signed APK
+        run: gradle assembleRelease
+
+      - name: Prepare APK
         run: |
-          echo "/u3+7QAAAAIAAAABAAAAAQALcG9iZWRhcmFkYXIAAAGgUo1aCgAABP4wggT6MAwGCisGAQQBKgIRAQEEggToiDT0w55ozGg6uGMO" > key.txt
+          cp app/build/outputs/apk/release/app-release.apk PobedaRadar-v0.12.apk
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: PobedaRadar-v0.12
+          path: PobedaRadar-v0.12.apk
+          if-no-files-found: error
+          retention-days: 30
