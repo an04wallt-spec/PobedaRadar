@@ -2,6 +2,7 @@ name: Build PobedaRadar APK
 
 on:
   workflow_dispatch:
+
   push:
     branches:
       - main
@@ -11,7 +12,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Set up JDK 17
@@ -25,15 +26,31 @@ jobs:
         with:
           gradle-version: '8.9'
 
+      # ----------------------------------------------------------
+      # ВАЖНО
+      #
+      # Сохраняем Android debug-keystore между сборками.
+      # Благодаря этому будущие версии будут подписаны
+      # ОДНИМ И ТЕМ ЖЕ ключом и смогут обновляться поверх старых.
+      # ----------------------------------------------------------
+
+      - name: Restore Android signing key
+        uses: actions/cache@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: pobedaradar-debug-signing-key-v1
+
       - name: Build APK
         run: gradle assembleDebug
 
-      - name: Rename APK
-        run: mv app/build/outputs/apk/debug/app-debug.apk PobedaRadar.apk
+      - name: Prepare PobedaRadar APK
+        run: |
+          cp app/build/outputs/apk/debug/app-debug.apk PobedaRadar.apk
 
       - name: Upload PobedaRadar APK
         uses: actions/upload-artifact@v4
         with:
-          name: PobedaRadar
+          name: PobedaRadar-v0.9
           path: PobedaRadar.apk
           if-no-files-found: error
+          retention-days: 30
