@@ -58,7 +58,7 @@ import java.util.concurrent.TimeUnit;
 
 public class MainActivity extends Activity {
 
-    private static final String APP_VERSION = "v0.9";
+    private static final String APP_VERSION = "v0.10";
 
     private static final String PREFS = "pobeda_radar";
 
@@ -2388,7 +2388,7 @@ public class MainActivity extends Activity {
 
         connection.setRequestProperty(
                 "User-Agent",
-                "PobedaRadar/0.9"
+                "PobedaRadar/0.10"
         );
 
         int code =
