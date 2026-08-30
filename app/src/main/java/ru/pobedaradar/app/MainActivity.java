@@ -287,7 +287,7 @@ public class MainActivity extends Activity {
         /*
          * ScrollView по-прежнему отсутствует.
          * Высоты элементов специально ужаты,
-         * чтобы оба списка по 7 строк
+         * чтобы список ближайших дат и 14 лучших предложений
          * помещались на экране.
          */
         root.setPadding(
@@ -485,7 +485,7 @@ public class MainActivity extends Activity {
                 bestOffersBox,
                 new LinearLayout.LayoutParams(
                         LinearLayout.LayoutParams.MATCH_PARENT,
-                        dp(126)
+                        dp(252)
                 )
         );
 
@@ -499,6 +499,8 @@ public class MainActivity extends Activity {
                         14,
                         true
                 );
+
+        datesCaption.setGravity(Gravity.CENTER);
 
         LinearLayout.LayoutParams captionLp =
                 new LinearLayout.LayoutParams(
@@ -879,7 +881,7 @@ public class MainActivity extends Activity {
         showStoredWeek();
 
         /*
-         * Показываем семь лучших
+         * Показываем четырнадцать лучших
          * сохранённых цен по ВСЕМУ диапазону.
          */
         showStoredBestOffers();
@@ -1157,7 +1159,7 @@ public class MainActivity extends Activity {
 
         /*
          * И сразу перерисовываем
-         * семь лучших предложений.
+         * четырнадцать лучших предложений.
          */
         showBestOffers(
                 offers
@@ -1267,7 +1269,7 @@ public class MainActivity extends Activity {
 
         int rows =
                 Math.min(
-                        7,
+                        14,
                         offers.size()
                 );
 
@@ -1320,7 +1322,7 @@ public class MainActivity extends Activity {
          * одинаковую высоту — добиваем
          * недостающие строки пустыми.
          */
-        for (int i = rows; i < 7; i++) {
+        for (int i = rows; i < 14; i++) {
 
             addEmptyBestRow();
         }
