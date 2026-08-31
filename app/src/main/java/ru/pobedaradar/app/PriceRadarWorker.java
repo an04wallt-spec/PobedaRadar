@@ -38,25 +38,63 @@ import java.util.Map;
 
 public class PriceRadarWorker extends Worker {
 
-    private static final String PREFS = "pobeda_radar";
+    private static final String PREFS =
+            "pobeda_radar";
 
-    private static final String TOKEN_KEY = "travelpayouts_token";
-    private static final String DATE_FROM_KEY = "date_from";
-    private static final String DATE_TO_KEY = "date_to";
+    private static final String TOKEN_KEY =
+            "travelpayouts_token";
 
-    private static final String LAST_PRICE_PREFIX = "last_price_";
-    private static final String MIN_PRICE_PREFIX = "min_price_";
+    private static final String DATE_FROM_KEY =
+            "date_from";
 
-    private static final String CHANNEL_ID = "pobeda_price_alerts";
+    private static final String DATE_TO_KEY =
+            "date_to";
+
+
+    private static final String LAST_PRICE_PREFIX =
+            "last_price_";
+
+    private static final String MIN_PRICE_PREFIX =
+            "min_price_";
+
 
     /*
-     * Пороговые значения.
+     * ============================================================
+     * ДИАГНОСТИКА ФОНОВОЙ РАБОТЫ
+     * ============================================================
      */
-    private static final int ABSOLUTE_ALERT_PRICE = 6000;
-    private static final double DROP_ALERT_PERCENT = 0.15;
+
+    private static final String BACKGROUND_LAST_RUN_KEY =
+            "background_last_run";
+
+    private static final String BACKGROUND_LAST_SUCCESS_KEY =
+            "background_last_success";
+
+    private static final String BACKGROUND_LAST_ERROR_KEY =
+            "background_last_error";
+
+
+    private static final String CHANNEL_ID =
+            "pobeda_price_alerts";
+
+
+    /*
+     * Пороговые значения уведомлений.
+     *
+     * Логику не меняем.
+     */
+    private static final int ABSOLUTE_ALERT_PRICE =
+            6000;
+
+    private static final double DROP_ALERT_PERCENT =
+            0.15;
+
 
     private final DateTimeFormatter monthParam =
-            DateTimeFormatter.ofPattern("yyyy-MM");
+            DateTimeFormatter.ofPattern(
+                    "yyyy-MM"
+            );
+
 
     private final DateTimeFormatter notificationDate =
             DateTimeFormatter.ofPattern(
@@ -64,25 +102,56 @@ public class PriceRadarWorker extends Worker {
                     new Locale("ru")
             );
 
+
     public PriceRadarWorker(
             @NonNull Context context,
             @NonNull WorkerParameters workerParams
     ) {
-        super(context, workerParams);
+
+        super(
+                context,
+                workerParams
+        );
     }
+
+
+    /*
+     * ============================================================
+     * ОСНОВНОЙ ФОНОВЫЙ ЗАПУСК
+     * ============================================================
+     */
 
     @NonNull
     @Override
     public Result doWork() {
 
-        try {
+        SharedPreferences prefs =
+                getApplicationContext()
+                        .getSharedPreferences(
+                                PREFS,
+                                Context.MODE_PRIVATE
+                        );
 
-            SharedPreferences prefs =
-                    getApplicationContext()
-                            .getSharedPreferences(
-                                    PREFS,
-                                    Context.MODE_PRIVATE
-                            );
+
+        /*
+         * Сам факт входа в doWork().
+         *
+         * Благодаря этому мы точно увидим,
+         * запускал Android Worker или нет.
+         */
+        long runStarted =
+                System.currentTimeMillis();
+
+
+        prefs.edit()
+                .putLong(
+                        BACKGROUND_LAST_RUN_KEY,
+                        runStarted
+                )
+                .apply();
+
+
+        try {
 
             String token =
                     prefs.getString(
@@ -90,12 +159,28 @@ public class PriceRadarWorker extends Worker {
                             ""
                     );
 
-            if (token.isEmpty()) {
+
+            /*
+             * Без токена Worker физически запустился,
+             * но выполнить проверку цен невозможно.
+             */
+            if (token == null
+                    || token.trim().isEmpty()) {
+
+                prefs.edit()
+                        .putString(
+                                BACKGROUND_LAST_ERROR_KEY,
+                                "Нет Travelpayouts token"
+                        )
+                        .apply();
+
                 return Result.success();
             }
 
+
             LocalDate today =
                     LocalDate.now();
+
 
             LocalDate from =
                     parseStoredDate(
@@ -106,28 +191,42 @@ public class PriceRadarWorker extends Worker {
                             today
                     );
 
+
             LocalDate to =
                     parseStoredDate(
                             prefs.getString(
                                     DATE_TO_KEY,
-                                    today.plusDays(30).toString()
+                                    today
+                                            .plusDays(30)
+                                            .toString()
                             ),
                             today.plusDays(30)
                     );
 
-            if (from.isBefore(today)) {
-                from = today;
-            }
-
-            if (to.isBefore(from)) {
-                to = from.plusDays(30);
-            }
 
             /*
-             * Оба направления проверяются,
-             * но каждое может создать максимум
-             * ОДНО уведомление за проход.
+             * Не проверяем уже прошедшие даты.
              */
+            if (from.isBefore(today)) {
+
+                from =
+                        today;
+            }
+
+
+            if (to.isBefore(from)) {
+
+                to =
+                        from.plusDays(30);
+            }
+
+
+            /*
+             * ====================================================
+             * МОСКВА → ГАЗИПАША
+             * ====================================================
+             */
+
             checkDirection(
                     prefs,
                     token,
@@ -137,6 +236,13 @@ public class PriceRadarWorker extends Worker {
                     from,
                     to
             );
+
+
+            /*
+             * ====================================================
+             * ГАЗИПАША → МОСКВА
+             * ====================================================
+             */
 
             checkDirection(
                     prefs,
@@ -148,13 +254,68 @@ public class PriceRadarWorker extends Worker {
                     to
             );
 
+
+            /*
+             * Обе проверки завершились успешно.
+             */
+            prefs.edit()
+                    .putLong(
+                            BACKGROUND_LAST_SUCCESS_KEY,
+                            System.currentTimeMillis()
+                    )
+                    .putString(
+                            BACKGROUND_LAST_ERROR_KEY,
+                            ""
+                    )
+                    .apply();
+
+
             return Result.success();
+
 
         } catch (Exception e) {
 
+            /*
+             * Worker действительно запускался,
+             * но завершился ошибкой.
+             *
+             * Ценовую историю здесь не очищаем.
+             */
+            String errorMessage =
+                    e.getMessage();
+
+
+            if (errorMessage == null
+                    || errorMessage.trim().isEmpty()) {
+
+                errorMessage =
+                        e.getClass()
+                                .getSimpleName();
+            }
+
+
+            prefs.edit()
+                    .putString(
+                            BACKGROUND_LAST_ERROR_KEY,
+                            errorMessage
+                    )
+                    .apply();
+
+
+            /*
+             * Оставляем прежнее поведение:
+             * WorkManager может повторить попытку.
+             */
             return Result.retry();
         }
     }
+
+
+    /*
+     * ============================================================
+     * ПРОВЕРКА ОДНОГО НАПРАВЛЕНИЯ
+     * ============================================================
+     */
 
     private void checkDirection(
             SharedPreferences prefs,
@@ -166,6 +327,7 @@ public class PriceRadarWorker extends Worker {
             LocalDate to
     ) throws Exception {
 
+
         List<Offer> offers =
                 requestEntireRange(
                         origin,
@@ -175,8 +337,10 @@ public class PriceRadarWorker extends Worker {
                         token
                 );
 
+
         Map<LocalDate, Integer> bestPrices =
                 new LinkedHashMap<>();
+
 
         /*
          * Для каждой даты берём
@@ -189,6 +353,7 @@ public class PriceRadarWorker extends Worker {
                             offer.date
                     );
 
+
             if (current == null
                     || offer.price < current) {
 
@@ -199,20 +364,27 @@ public class PriceRadarWorker extends Worker {
             }
         }
 
+
         /*
-         * Лучшее событие этого прохода.
+         * За одно направление
+         * может быть максимум одно уведомление.
          */
         AlertCandidate bestAlert =
                 null;
 
-        for (Map.Entry<LocalDate, Integer> entry
-                : bestPrices.entrySet()) {
+
+        for (
+                Map.Entry<LocalDate, Integer> entry
+                : bestPrices.entrySet()
+        ) {
 
             LocalDate date =
                     entry.getKey();
 
+
             int newPrice =
                     entry.getValue();
+
 
             int oldPrice =
                     prefs.getInt(
@@ -223,6 +395,7 @@ public class PriceRadarWorker extends Worker {
                             -1
                     );
 
+
             int historicalMin =
                     prefs.getInt(
                             minPriceKey(
@@ -232,6 +405,7 @@ public class PriceRadarWorker extends Worker {
                             -1
                     );
 
+
             AlertCandidate candidate =
                     createCandidate(
                             date,
@@ -240,27 +414,34 @@ public class PriceRadarWorker extends Worker {
                             historicalMin
                     );
 
+
             if (candidate != null) {
 
-                if (bestAlert == null
-                        || candidate.score > bestAlert.score) {
+                if (
+                        bestAlert == null
+                                || candidate.score
+                                > bestAlert.score
+                ) {
 
                     bestAlert =
                             candidate;
                 }
             }
 
+
             /*
-             * Независимо от уведомления
-             * обновляем историю всех дат.
+             * Независимо от того,
+             * будет уведомление или нет,
+             * сохраняем новую цену и минимум.
              */
             int newHistoricalMin =
                     historicalMin <= 0
                             ? newPrice
                             : Math.min(
-                            historicalMin,
-                            newPrice
-                    );
+                                    historicalMin,
+                                    newPrice
+                            );
+
 
             prefs.edit()
                     .putInt(
@@ -280,8 +461,10 @@ public class PriceRadarWorker extends Worker {
                     .apply();
         }
 
+
         /*
-         * За направление — максимум одно уведомление.
+         * Максимум одно уведомление
+         * на направление за проход Worker.
          */
         if (bestAlert != null) {
 
@@ -292,6 +475,13 @@ public class PriceRadarWorker extends Worker {
         }
     }
 
+
+    /*
+     * ============================================================
+     * ВЫБОР СОБЫТИЯ ДЛЯ УВЕДОМЛЕНИЯ
+     * ============================================================
+     */
+
     private AlertCandidate createCandidate(
             LocalDate date,
             int newPrice,
@@ -299,73 +489,104 @@ public class PriceRadarWorker extends Worker {
             int historicalMin
     ) {
 
+
         boolean absoluteLow =
-                newPrice <= ABSOLUTE_ALERT_PRICE;
+                newPrice
+                        <= ABSOLUTE_ALERT_PRICE;
+
 
         boolean newHistoricalMinimum =
                 historicalMin > 0
-                        && newPrice < historicalMin;
+                        && newPrice
+                        < historicalMin;
+
 
         boolean significantDrop =
                 false;
 
+
         double dropPercent =
                 0.0;
+
 
         int dropAmount =
                 0;
 
-        if (oldPrice > 0
-                && newPrice < oldPrice) {
+
+        if (
+                oldPrice > 0
+                        && newPrice < oldPrice
+        ) {
 
             dropAmount =
-                    oldPrice - newPrice;
+                    oldPrice
+                            - newPrice;
+
 
             dropPercent =
                     dropAmount
                             / (double) oldPrice;
+
 
             significantDrop =
                     dropPercent
                             >= DROP_ALERT_PERCENT;
         }
 
-        if (!absoluteLow
-                && !newHistoricalMinimum
-                && !significantDrop) {
+
+        /*
+         * Ничего интересного —
+         * уведомление не требуется.
+         */
+        if (
+                !absoluteLow
+                        && !newHistoricalMinimum
+                        && !significantDrop
+        ) {
 
             return null;
         }
 
+
         /*
-         * SCORE:
+         * ========================================================
+         * SCORE
+         * ========================================================
          *
-         * Сильное процентное падение
-         * получает максимальный приоритет.
+         * 1. Сильное процентное снижение.
+         * 2. Новый исторический минимум.
+         * 3. Цена до 6000 ₽.
          *
-         * Затем новый исторический минимум.
-         *
-         * Затем просто цена ниже 6000.
+         * Эта логика оставлена прежней.
          */
-        double score = 0;
+
+        double score =
+                0;
+
 
         if (significantDrop) {
 
             score +=
                     10000
-                            + dropPercent * 10000;
+                            + dropPercent
+                            * 10000;
         }
+
 
         if (newHistoricalMinimum) {
 
-            score += 5000;
+            score +=
+                    5000;
+
 
             if (historicalMin > 0) {
 
                 score +=
-                        historicalMin - newPrice;
+                        historicalMin
+                                - newPrice;
             }
         }
+
 
         if (absoluteLow) {
 
@@ -376,6 +597,7 @@ public class PriceRadarWorker extends Worker {
                                     - newPrice
                     );
         }
+
 
         return new AlertCandidate(
                 date,
@@ -391,22 +613,41 @@ public class PriceRadarWorker extends Worker {
         );
     }
 
+
+    /*
+     * ============================================================
+     * УВЕДОМЛЕНИЕ
+     * ============================================================
+     */
+
     private void sendNotification(
             boolean outbound,
             AlertCandidate alert
     ) {
 
+
         Context context =
                 getApplicationContext();
 
-        if (Build.VERSION.SDK_INT >= 33
-                && ContextCompat.checkSelfPermission(
-                context,
-                Manifest.permission.POST_NOTIFICATIONS
-        ) != PackageManager.PERMISSION_GRANTED) {
+
+        /*
+         * Android 13+
+         */
+        if (
+                Build.VERSION.SDK_INT >= 33
+                        && ContextCompat
+                        .checkSelfPermission(
+                                context,
+                                Manifest.permission
+                                        .POST_NOTIFICATIONS
+                        )
+                        != PackageManager
+                        .PERMISSION_GRANTED
+        ) {
 
             return;
         }
+
 
         NotificationManager manager =
                 (NotificationManager)
@@ -414,34 +655,46 @@ public class PriceRadarWorker extends Worker {
                                 Context.NOTIFICATION_SERVICE
                         );
 
+
         if (manager == null) {
+
             return;
         }
 
+
+        /*
+         * Канал уведомлений.
+         */
         if (Build.VERSION.SDK_INT >= 26) {
 
             NotificationChannel channel =
                     new NotificationChannel(
                             CHANNEL_ID,
                             "Низкие цены Победы",
-                            NotificationManager.IMPORTANCE_HIGH
+                            NotificationManager
+                                    .IMPORTANCE_HIGH
                     );
+
 
             channel.setDescription(
                     "Уведомления Pobeda Radar о заметном снижении цен"
             );
+
 
             manager.createNotificationChannel(
                     channel
             );
         }
 
+
         String route =
                 outbound
                         ? "Москва → Газипаша"
                         : "Газипаша → Москва";
 
+
         String title;
+
 
         if (alert.significantDrop) {
 
@@ -461,14 +714,20 @@ public class PriceRadarWorker extends Worker {
                     "Победа: низкая цена";
         }
 
+
         StringBuilder message =
                 new StringBuilder();
 
-        message.append(route);
+
+        message.append(
+                route
+        );
+
 
         message.append(
                 " · "
         );
+
 
         message.append(
                 formatPrice(
@@ -476,9 +735,11 @@ public class PriceRadarWorker extends Worker {
                 )
         );
 
+
         message.append(
                 " на "
         );
+
 
         message.append(
                 alert.date.format(
@@ -486,11 +747,13 @@ public class PriceRadarWorker extends Worker {
                 )
         );
 
+
         if (alert.dropAmount > 0) {
 
             message.append(
                     " · ↓"
             );
+
 
             message.append(
                     formatNumber(
@@ -499,6 +762,7 @@ public class PriceRadarWorker extends Worker {
             );
         }
 
+
         if (alert.newHistoricalMinimum) {
 
             message.append(
@@ -506,16 +770,22 @@ public class PriceRadarWorker extends Worker {
             );
         }
 
+
+        /*
+         * Нажатие открывает приложение.
+         */
         Intent openAppIntent =
                 new Intent(
                         context,
-                        MainActivity.class
+                        MainActivityV14.class
                 );
+
 
         openAppIntent.setFlags(
                 Intent.FLAG_ACTIVITY_NEW_TASK
                         | Intent.FLAG_ACTIVITY_CLEAR_TOP
         );
+
 
         PendingIntent pendingIntent =
                 PendingIntent.getActivity(
@@ -524,9 +794,12 @@ public class PriceRadarWorker extends Worker {
                                 ? 1001
                                 : 1002,
                         openAppIntent,
-                        PendingIntent.FLAG_UPDATE_CURRENT
-                                | PendingIntent.FLAG_IMMUTABLE
+                        PendingIntent
+                                .FLAG_UPDATE_CURRENT
+                                | PendingIntent
+                                .FLAG_IMMUTABLE
                 );
+
 
         NotificationCompat.Builder builder =
                 new NotificationCompat.Builder(
@@ -534,7 +807,8 @@ public class PriceRadarWorker extends Worker {
                         CHANNEL_ID
                 )
                         .setSmallIcon(
-                                android.R.drawable.stat_notify_more
+                                android.R.drawable
+                                        .stat_notify_more
                         )
                         .setContentTitle(
                                 title
@@ -543,32 +817,39 @@ public class PriceRadarWorker extends Worker {
                                 message.toString()
                         )
                         .setStyle(
-                                new NotificationCompat.BigTextStyle()
+                                new NotificationCompat
+                                        .BigTextStyle()
                                         .bigText(
                                                 message.toString()
                                         )
                         )
                         .setPriority(
-                                NotificationCompat.PRIORITY_HIGH
+                                NotificationCompat
+                                        .PRIORITY_HIGH
                         )
-                        .setAutoCancel(true)
-                        .setOnlyAlertOnce(true)
+                        .setAutoCancel(
+                                true
+                        )
+                        .setOnlyAlertOnce(
+                                true
+                        )
                         .setContentIntent(
                                 pendingIntent
                         );
 
+
         /*
-         * КЛЮЧЕВОЕ ИЗМЕНЕНИЕ:
+         * Один постоянный ID
+         * для каждого направления.
          *
-         * один постоянный ID на каждое направление.
-         *
-         * Следующая тревога не создаёт новую карточку,
-         * а ОБНОВЛЯЕТ существующую.
+         * Новое уведомление заменяет предыдущее,
+         * а не создаёт бесконечную стопку.
          */
         int notificationId =
                 outbound
                         ? 91101
                         : 91102;
+
 
         manager.notify(
                 notificationId,
@@ -576,9 +857,12 @@ public class PriceRadarWorker extends Worker {
         );
     }
 
-    // ============================================================
-    // API
-    // ============================================================
+
+    /*
+     * ============================================================
+     * API
+     * ============================================================
+     */
 
     private List<Offer> requestEntireRange(
             String origin,
@@ -588,14 +872,22 @@ public class PriceRadarWorker extends Worker {
             String token
     ) throws Exception {
 
+
         List<Offer> result =
                 new ArrayList<>();
 
+
         YearMonth month =
-                YearMonth.from(from);
+                YearMonth.from(
+                        from
+                );
+
 
         YearMonth lastMonth =
-                YearMonth.from(to);
+                YearMonth.from(
+                        to
+                );
+
 
         while (!month.isAfter(
                 lastMonth
@@ -612,12 +904,17 @@ public class PriceRadarWorker extends Worker {
                     )
             );
 
+
             month =
-                    month.plusMonths(1);
+                    month.plusMonths(
+                            1
+                    );
         }
+
 
         return result;
     }
+
 
     private List<Offer> requestMonth(
             String origin,
@@ -627,6 +924,7 @@ public class PriceRadarWorker extends Worker {
             LocalDate to,
             String token
     ) throws Exception {
+
 
         String url =
                 "https://api.travelpayouts.com"
@@ -652,31 +950,46 @@ public class PriceRadarWorker extends Worker {
                         + "&token="
                         + encode(token);
 
+
         JSONObject json =
-                getJson(url);
+                getJson(
+                        url
+                );
+
 
         JSONArray data =
                 json.optJSONArray(
                         "data"
                 );
 
+
         List<Offer> result =
                 new ArrayList<>();
 
+
         if (data == null) {
+
             return result;
         }
 
-        for (int i = 0;
-             i < data.length();
-             i++) {
+
+        for (
+                int i = 0;
+                i < data.length();
+                i++
+        ) {
 
             JSONObject item =
-                    data.optJSONObject(i);
+                    data.optJSONObject(
+                            i
+                    );
+
 
             if (item == null) {
+
                 continue;
             }
+
 
             String airline =
                     item.optString(
@@ -684,11 +997,17 @@ public class PriceRadarWorker extends Worker {
                             ""
                     );
 
+
+            /*
+             * Только Победа.
+             */
             if (!"DP".equalsIgnoreCase(
                     airline
             )) {
+
                 continue;
             }
+
 
             int transfers =
                     item.optInt(
@@ -696,9 +1015,15 @@ public class PriceRadarWorker extends Worker {
                             0
                     );
 
+
+            /*
+             * Только прямые.
+             */
             if (transfers != 0) {
+
                 continue;
             }
+
 
             LocalDate date =
                     parseDepartureDate(
@@ -708,12 +1033,16 @@ public class PriceRadarWorker extends Worker {
                             )
                     );
 
-            if (date == null
-                    || date.isBefore(from)
-                    || date.isAfter(to)) {
+
+            if (
+                    date == null
+                            || date.isBefore(from)
+                            || date.isAfter(to)
+            ) {
 
                 continue;
             }
+
 
             int price =
                     item.optInt(
@@ -721,9 +1050,12 @@ public class PriceRadarWorker extends Worker {
                             -1
                     );
 
+
             if (price <= 0) {
+
                 continue;
             }
+
 
             result.add(
                     new Offer(
@@ -733,64 +1065,83 @@ public class PriceRadarWorker extends Worker {
             );
         }
 
+
         return result;
     }
+
 
     private JSONObject getJson(
             String urlString
     ) throws Exception {
 
+
         HttpURLConnection connection =
                 (HttpURLConnection)
                         new URL(
                                 urlString
-                        ).openConnection();
+                        )
+                                .openConnection();
+
 
         connection.setRequestMethod(
                 "GET"
         );
 
+
         connection.setConnectTimeout(
                 15000
         );
 
+
         connection.setReadTimeout(
                 25000
         );
+
 
         connection.setRequestProperty(
                 "Accept",
                 "application/json"
         );
 
+
         connection.setRequestProperty(
                 "User-Agent",
-                "PobedaRadar-Worker/0.9"
+                "PobedaRadar-Worker/0.14"
         );
+
 
         int code =
                 connection.getResponseCode();
 
+
         InputStream stream =
                 code >= 200
                         && code < 300
-                        ? connection.getInputStream()
-                        : connection.getErrorStream();
+                        ? connection
+                        .getInputStream()
+                        : connection
+                        .getErrorStream();
+
 
         String response =
                 readStream(
                         stream
                 );
 
+
         connection.disconnect();
 
-        if (code == 401
-                || code == 403) {
+
+        if (
+                code == 401
+                        || code == 403
+        ) {
 
             throw new Exception(
                     "Travelpayouts отклонил токен"
             );
         }
+
 
         if (code == 429) {
 
@@ -799,8 +1150,11 @@ public class PriceRadarWorker extends Worker {
             );
         }
 
-        if (code < 200
-                || code >= 300) {
+
+        if (
+                code < 200
+                        || code >= 300
+        ) {
 
             throw new Exception(
                     "Travelpayouts HTTP "
@@ -808,10 +1162,12 @@ public class PriceRadarWorker extends Worker {
             );
         }
 
+
         JSONObject json =
                 new JSONObject(
                         response
                 );
+
 
         if (!json.optBoolean(
                 "success",
@@ -823,20 +1179,27 @@ public class PriceRadarWorker extends Worker {
             );
         }
 
+
         return json;
     }
 
-    // ============================================================
-    // UTIL
-    // ============================================================
+
+    /*
+     * ============================================================
+     * UTIL
+     * ============================================================
+     */
 
     private String readStream(
             InputStream stream
     ) throws Exception {
 
+
         if (stream == null) {
+
             return "";
         }
+
 
         BufferedReader reader =
                 new BufferedReader(
@@ -846,41 +1209,59 @@ public class PriceRadarWorker extends Worker {
                         )
                 );
 
+
         StringBuilder builder =
                 new StringBuilder();
 
+
         String line;
 
-        while ((line =
-                reader.readLine())
-                != null) {
 
-            builder.append(line);
+        while (
+                (line =
+                        reader.readLine())
+                        != null
+        ) {
+
+            builder.append(
+                    line
+            );
         }
+
 
         reader.close();
 
+
         return builder.toString();
     }
+
 
     private LocalDate parseDepartureDate(
             String value
     ) {
 
-        if (value == null
-                || value.length() < 10) {
+
+        if (
+                value == null
+                        || value.length() < 10
+        ) {
 
             return null;
         }
 
+
         try {
 
             return OffsetDateTime
-                    .parse(value)
+                    .parse(
+                            value
+                    )
                     .toLocalDate();
 
         } catch (Exception ignored) {
+
         }
+
 
         try {
 
@@ -892,15 +1273,19 @@ public class PriceRadarWorker extends Worker {
             );
 
         } catch (Exception ignored) {
+
         }
+
 
         return null;
     }
+
 
     private LocalDate parseStoredDate(
             String value,
             LocalDate fallback
     ) {
+
 
         try {
 
@@ -914,44 +1299,52 @@ public class PriceRadarWorker extends Worker {
         }
     }
 
+
     private String routeHistoryId(
             boolean outbound
     ) {
+
 
         return outbound
                 ? "MOW_GZP"
                 : "GZP_MOW";
     }
 
+
     private String lastPriceKey(
             LocalDate date,
             boolean outbound
     ) {
 
+
         return LAST_PRICE_PREFIX
                 + routeHistoryId(
-                outbound
-        )
+                        outbound
+                )
                 + "_"
                 + date;
     }
+
 
     private String minPriceKey(
             LocalDate date,
             boolean outbound
     ) {
 
+
         return MIN_PRICE_PREFIX
                 + routeHistoryId(
-                outbound
-        )
+                        outbound
+                )
                 + "_"
                 + date;
     }
 
+
     private String formatPrice(
             int value
     ) {
+
 
         return String.format(
                         new Locale("ru"),
@@ -964,9 +1357,11 @@ public class PriceRadarWorker extends Worker {
                 );
     }
 
+
     private String formatNumber(
             int value
     ) {
+
 
         return String.format(
                         new Locale("ru"),
@@ -979,9 +1374,11 @@ public class PriceRadarWorker extends Worker {
                 );
     }
 
+
     private String encode(
             String value
     ) throws Exception {
+
 
         return URLEncoder.encode(
                 value,
@@ -989,41 +1386,56 @@ public class PriceRadarWorker extends Worker {
         );
     }
 
-    // ============================================================
-    // DATA
-    // ============================================================
+
+    /*
+     * ============================================================
+     * DATA
+     * ============================================================
+     */
 
     private static class Offer {
 
         final LocalDate date;
+
         final int price;
+
 
         Offer(
                 LocalDate date,
                 int price
         ) {
 
-            this.date = date;
-            this.price = price;
+            this.date =
+                    date;
+
+            this.price =
+                    price;
         }
     }
+
 
     private static class AlertCandidate {
 
         final LocalDate date;
 
         final int newPrice;
+
         final int oldPrice;
+
         final int historicalMin;
 
         final int dropAmount;
+
         final double dropPercent;
 
         final boolean absoluteLow;
+
         final boolean newHistoricalMinimum;
+
         final boolean significantDrop;
 
         final double score;
+
 
         AlertCandidate(
                 LocalDate date,
@@ -1038,32 +1450,42 @@ public class PriceRadarWorker extends Worker {
                 double score
         ) {
 
+
             this.date =
                     date;
+
 
             this.newPrice =
                     newPrice;
 
+
             this.oldPrice =
                     oldPrice;
+
 
             this.historicalMin =
                     historicalMin;
 
+
             this.dropAmount =
                     dropAmount;
+
 
             this.dropPercent =
                     dropPercent;
 
+
             this.absoluteLow =
                     absoluteLow;
+
 
             this.newHistoricalMinimum =
                     newHistoricalMinimum;
 
+
             this.significantDrop =
                     significantDrop;
+
 
             this.score =
                     score;
