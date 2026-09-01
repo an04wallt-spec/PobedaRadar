@@ -31,12 +31,12 @@ jobs:
 
       - name: Prepare APK
         run: |
-          cp app/build/outputs/apk/release/app-release.apk PobedaRadar-v0.14.apk
+          cp app/build/outputs/apk/release/app-release.apk PobedaRadar-v0.15.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: PobedaRadar-v0.14
-          path: PobedaRadar-v0.14.apk
+          name: PobedaRadar-v0.15
+          path: PobedaRadar-v0.15.apk
           if-no-files-found: error
           retention-days: 30
